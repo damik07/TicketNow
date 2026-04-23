@@ -1,0 +1,54 @@
+const isNode = typeof window === 'undefined';
+const windowObj = isNode ? { localStorage: new Map<string, string>() } : window;
+const storage = windowObj.localStorage as Storage;
+
+const toSnakeCase = (str: string): string => {
+	return str.replace(/([A-Z])/g, '_$1').toLowerCase();
+}
+
+interface GetAppParamOptions {
+	defaultValue?: string | null;
+	removeFromUrl?: boolean;
+}
+
+const getAppParamValue = (paramName: string, { defaultValue = null, removeFromUrl = false }: GetAppParamOptions = {}): string | null => {
+	if (isNode) {
+		return defaultValue;
+	}
+	const storageKey = `ticketnow_${toSnakeCase(paramName)}`;
+	const urlParams = new URLSearchParams(window.location.search);
+	const searchParam = urlParams.get(paramName);
+	if (removeFromUrl) {
+		urlParams.delete(paramName);
+		const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ""
+			}${window.location.hash}`;
+		window.history.replaceState({}, document.title, newUrl);
+	}
+	if (searchParam) {
+		storage.setItem(storageKey, searchParam);
+		return searchParam;
+	}
+	if (defaultValue) {
+		storage.setItem(storageKey, defaultValue);
+		return defaultValue;
+	}
+	const storedValue = storage.getItem(storageKey);
+	if (storedValue) {
+		return storedValue;
+	}
+	return null;
+}
+
+const getAppParams = () => {
+	return {
+		appId: getAppParamValue("app_id", { defaultValue: (import.meta as any).env.VITE_APP_ID }),
+		token: getAppParamValue("access_token", { removeFromUrl: true }),
+		fromUrl: getAppParamValue("from_url", { defaultValue: window.location.href }),
+		functionsVersion: getAppParamValue("functions_version", { defaultValue: "v1" }),
+		appBaseUrl: getAppParamValue("app_base_url", { defaultValue: window.location.origin }),
+	}
+}
+
+export const appParams = {
+	...getAppParams()
+}

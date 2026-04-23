@@ -1,0 +1,31 @@
+'use client';
+
+import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
+import { useAuth } from './AuthContext';
+
+export default function NavigationTracker() {
+    const pathname = usePathname();
+    const { isAuthenticated } = useAuth();
+
+    // Log user activity when navigating to a page
+    useEffect(() => {
+        if (!pathname || !isAuthenticated) return;
+
+        // Extract page name from pathname
+        let pageName;
+
+        if (pathname === '/' || pathname === '') {
+            pageName = 'Home';
+        } else {
+            // Remove leading slash and get the first segment
+            const pathSegment = pathname.replace(/^\//, '').split('/')[0];
+            pageName = pathSegment || 'Home';
+        }
+
+        // Simulación de logging - en producción se implementaría con el backend
+        console.log(`User navigated to: ${pageName}`);
+    }, [pathname, isAuthenticated]);
+
+    return null;
+}
