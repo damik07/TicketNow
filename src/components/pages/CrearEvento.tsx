@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Plus, Trash2, Save, ArrowLeft, Image, Loader2, CheckCircle2, Ticket } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 
 interface User {
   id: string;
@@ -59,7 +60,7 @@ const CATEGORIES = [
 
 export default function CrearEvento() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const { user, isAuthenticated, isLoadingAuth } = useAuth();
   const [organizer, setOrganizer] = useState<Organizer | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,34 +77,43 @@ export default function CrearEvento() {
   ]);
 
   useEffect(() => {
-    // TODO: Implement Next.js authentication check
     const loadData = async () => {
-      const timer = setTimeout(() => {
-        // Mock user data
-        const mockUser: User = {
-          id: "1",
-          full_name: "Usuario Test",
-          role: "productor"
-        };
-        setUser(mockUser);
+      if (!isAuthenticated || !user) {
+        router.push('/Login');
+        return;
+      }
 
-        // Mock organizer data
-        const mockOrganizer: Organizer = {
-          id: "1",
-          user_id: mockUser.id,
-          business_name: "Productora Test",
-          verified: true
-        };
-        setOrganizer(mockOrganizer);
+      // Check if user has required role
+      if (user.role !== 'ORGANIZER' && user.role !== 'ADMIN') {
+        toast.error("No tienes permisos para crear eventos. Debes ser organizador.");
+        router.push('/SerOrganizador');
+        return;
+      }
+
+      try {
+        // Get organizer data
+        const organizerResponse = await fetch(`/api/organizers?userId=${user.id}`);
+        const organizersData = await organizerResponse.json();
         
+        if (organizersData.error || !organizersData.length) {
+          toast.error("No se encontró tu cuenta de organizador");
+          router.push('/SerOrganizador');
+          return;
+        }
+        
+        setOrganizer(organizersData[0]);
         setLoading(false);
-      }, 1000);
-      
-      return () => clearTimeout(timer);
+      } catch (error) {
+        console.error('Failed to load organizer data:', error);
+        toast.error("Error al cargar datos del organizador");
+        router.push('/DashboardVentas');
+      }
     };
     
-    loadData();
-  }, []);
+    if (!isLoadingAuth) {
+      loadData();
+    }
+  }, [isAuthenticated, user, isLoadingAuth, router]);
 
   const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -150,41 +160,50 @@ export default function CrearEvento() {
     setSaving(true);
 
     try {
-      // TODO: Implement Next.js API calls for event creation
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const minPrice = Math.min(...ticketTypes.map((t) => t.price || 0));
-      const totalCapacity = ticketTypes.reduce((sum, t) => sum + (t.stock_total || 0), 0);
-
-      // Simulate event creation
-      const createdEvent = {
-        id: Date.now().toString(),
-        ...event,
-        organizer_id: organizer.id,
-        min_price: minPrice,
-        total_capacity: totalCapacity,
+      const eventData = {
+        title: event.title,
+        description: event.description,
+        dateTime: event.date_time,
+        endDateTime: event.end_date_time,
+        locationName: event.location_name,
+        locationAddress: event.location_address,
+        category: event.category,
+        bannerUrl: event.banner_url,
+        ticketTypes: ticketTypes.map(tt => ({
+          name: tt.name,
+          description: tt.description,
+          price: tt.price,
+          stockTotal: tt.stock_total,
+          maxPerUser: tt.max_per_user || 4,
+        }))
       };
 
-      // Simulate ticket types creation
-      const createdTicketTypes = ticketTypes.map((tt, i) => ({
-        id: `${Date.now()}-${i}`,
-        event_id: createdEvent.id,
-        name: tt.name,
-        description: tt.description,
-        price: tt.price,
-        stock_total: tt.stock_total,
-        stock_available: tt.stock_total,
-        max_per_user: tt.max_per_user || 4,
-        sort_order: i,
-      }));
+      const response = await fetch('/api/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(eventData),
+      });
 
-      console.log("Event created:", createdEvent);
-      console.log("Ticket types created:", createdTicketTypes);
+      const data = await response.json();
+
+      if (data.error) {
+        toast.error(data.error);
+        setSaving(false);
+        return;
+      }
 
       setSaving(false);
       setSuccess(true);
       toast.success("Evento creado exitosamente");
+      
+      // Redirigir al dashboard después de 2 segundos
+      setTimeout(() => {
+        router.push('/DashboardVentas');
+      }, 2000);
     } catch (error) {
+      console.error('Error creating event:', error);
       setSaving(false);
       toast.error("Error al crear el evento");
     }
@@ -204,7 +223,7 @@ export default function CrearEvento() {
     setSuccess(false);
   };
 
-  if (loading) {
+  if (loading || isLoadingAuth) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-violet-500" />

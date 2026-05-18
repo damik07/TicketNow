@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions, request)
+    const session = await getServerSession(authOptions)
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -68,6 +68,12 @@ export async function POST(request: NextRequest) {
         logoUrl,
         verified: false,
       }
+    })
+
+    // Update user role to ORGANIZER
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: { role: 'ORGANIZER' }
     })
 
     return NextResponse.json(organizer)

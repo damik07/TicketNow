@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
+import { PackPercentApplyMode } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { UserRole } from '@/lib/permissions'
+
+function parsePercentApplyMode(value: unknown): PackPercentApplyMode {
+  if (
+    value === PackPercentApplyMode.DEDUCE_DEL_PRECIO ||
+    value === 'DEDUCE_DEL_PRECIO' ||
+    value === 'deduce del precio'
+  ) {
+    return PackPercentApplyMode.DEDUCE_DEL_PRECIO
+  }
+  return PackPercentApplyMode.ADICIONA_AL_PRECIO
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +28,7 @@ export async function GET(request: NextRequest) {
       where: { email: session.user.email }
     })
 
-    if (!user || user.role !== 'admin') {
+    if (!user || user.role !== UserRole.ADMIN) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -41,16 +54,34 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions, request)
-    if (!session?.user) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (session.user.role !== 'admin') {
+    // Get user by email first
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    })
+
+    if (!user || user.role !== UserRole.ADMIN) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    const { name, description, hasPhysicalTickets, hasDigitalTickets, hasQrValidation, hasConsumptions, hasStaffManagement, commissionType, commissionTickets, commissionConsumptions } = await request.json()
+    const {
+      name,
+      description,
+      hasPhysicalTickets,
+      hasDigitalTickets,
+      hasQrValidation,
+      hasConsumptions,
+      hasStaffManagement,
+      commissionType,
+      commissionTickets,
+      commissionConsumptions,
+      ticketPercentApply,
+      consumptionPercentApply,
+    } = await request.json()
 
     const pack = await prisma.eventPack.create({
       data: {
@@ -64,6 +95,8 @@ export async function POST(request: NextRequest) {
         commissionType,
         commissionTickets,
         commissionConsumptions,
+        ticketPercentApply: parsePercentApplyMode(ticketPercentApply),
+        consumptionPercentApply: parsePercentApplyMode(consumptionPercentApply),
         isActive: true,
       }
     })
@@ -77,12 +110,17 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions, request)
-    if (!session?.user) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (session.user.role !== 'admin') {
+    // Get user by email first
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    })
+
+    if (!user || user.role !== UserRole.ADMIN) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -93,7 +131,21 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Pack ID required' }, { status: 400 })
     }
 
-    const { name, description, hasPhysicalTickets, hasDigitalTickets, hasQrValidation, hasConsumptions, hasStaffManagement, commissionType, commissionTickets, commissionConsumptions, isActive } = await request.json()
+    const {
+      name,
+      description,
+      hasPhysicalTickets,
+      hasDigitalTickets,
+      hasQrValidation,
+      hasConsumptions,
+      hasStaffManagement,
+      commissionType,
+      commissionTickets,
+      commissionConsumptions,
+      ticketPercentApply,
+      consumptionPercentApply,
+      isActive,
+    } = await request.json()
 
     const updatedPack = await prisma.eventPack.update({
       where: { id: packId },
@@ -108,6 +160,8 @@ export async function PUT(request: NextRequest) {
         commissionType,
         commissionTickets,
         commissionConsumptions,
+        ticketPercentApply: parsePercentApplyMode(ticketPercentApply),
+        consumptionPercentApply: parsePercentApplyMode(consumptionPercentApply),
         isActive,
       }
     })
@@ -121,12 +175,17 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions, request)
-    if (!session?.user) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (session.user.role !== 'admin') {
+    // Get user by email first
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    })
+
+    if (!user || user.role !== UserRole.ADMIN) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 

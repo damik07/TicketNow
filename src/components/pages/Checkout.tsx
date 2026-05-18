@@ -59,7 +59,7 @@ export default function Checkout() {
         const data = await response.json();
         
         if (data.error) {
-          router.push('/login');
+          router.push('/Login');
           return;
         }
 
@@ -97,7 +97,12 @@ export default function Checkout() {
     setProcessing(true);
 
     try {
-      // Create order via API
+      const orderItems = items.map((item) => ({
+        ticketTypeId: item.ticket_type_id,
+        ticketTypeName: item.ticket_type_name,
+        quantity: item.quantity,
+      }));
+
       const orderResponse = await fetch('/api/orders', {
         method: 'POST',
         headers: {
@@ -105,38 +110,15 @@ export default function Checkout() {
         },
         body: JSON.stringify({
           eventId,
-          items,
-          totalAmount: total,
+          items: orderItems,
           paymentMethod: 'simulado',
         }),
       });
 
-      const order = await orderResponse.json();
+      const payload = await orderResponse.json();
 
-      if (order.error) {
-        throw new Error(order.error);
-      }
-
-      // Create tickets via API
-      const ticketsResponse = await fetch('/api/tickets', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          orderId: order.id,
-          ticketTypes: items.map(item => ({
-            ticketTypeId: item.ticket_type_id,
-            quantity: item.quantity,
-          })),
-          eventId,
-        }),
-      });
-
-      const tickets = await ticketsResponse.json();
-
-      if (tickets.error) {
-        throw new Error(tickets.error);
+      if (!orderResponse.ok || payload.error) {
+        throw new Error(payload.error || 'Error al crear la orden');
       }
 
       setProcessing(false);

@@ -2,17 +2,33 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { UserRole } from '@/lib/permissions'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url!)
     const category = searchParams.get('category')
-    const status = searchParams.get('status') || 'publicado'
+    const status = searchParams.get('status')
+    const admin = searchParams.get('admin')
+
+    // Check if user is admin for admin access
+    let isAdmin = false
+    if (admin === 'true') {
+      const session = await getServerSession(authOptions)
+      if (session?.user?.email) {
+        const user = await prisma.user.findUnique({
+          where: { email: session.user.email }
+        })
+        isAdmin = user?.role === UserRole.ADMIN
+      }
+    }
 
     const events = await prisma.event.findMany({
       where: {
-        status,
+        ...(status && { status }),
         ...(category && { category }),
+        // If admin access, show all events, otherwise only published ones
+        ...(!isAdmin && !status && { status: 'publicado' })
       },
       include: {
         organizer: {
@@ -43,16 +59,20 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions, request)
-    if (!session?.user) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { title, description, dateTime, endDateTime, locationName, locationAddress, locationLat, locationLng, category, bannerUrl, ticketTypes } = await request.json()
 
     // Check if user is an organizer
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    })
+
     const organizer = await prisma.organizer.findUnique({
-      where: { userId: session.user.id }
+      where: { userId: user?.id }
     })
 
     if (!organizer) {
@@ -99,3 +119,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create event' }, { status: 500 })
   }
 }
+

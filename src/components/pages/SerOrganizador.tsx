@@ -12,9 +12,10 @@ import {
   Zap, BarChart2, Users, Ticket
 } from "lucide-react";
 import { toast } from "sonner";
+import { signIn } from 'next-auth/react';
 
 const BENEFITS = [
-  { icon: Ticket, title: "Venta ilimitada", desc: "Creá eventos y vendé entradas sin límite de stock." },
+  { icon: Ticket, title: "Venta ágiles", desc: "Creá eventos y vendé entradas sin demoras." },
   { icon: BarChart2, title: "Dashboard en tiempo real", desc: "Seguí tus ventas, ingresos y asistentes en vivo." },
   { icon: Users, title: "Gestión de Staff", desc: "Administrá tu equipo con roles y validación de QR." },
   { icon: ShieldCheck, title: "Pagos seguros", desc: "Integración con Mercado Pago y transferencia directa." },
@@ -74,6 +75,72 @@ export default function SerOrganizador() {
   const handleContractChange = (checked: boolean | "indeterminate") => {
     setAcceptedContract(checked === true);
   };
+
+  // Validación y formateo de CUIT
+  const formatCUIT = (value: string) => {
+    // Eliminar todo excepto números
+    const numbers = value.replace(/\D/g, '');
+    
+    // Formato XX-XXXXXXXX-X (11 dígitos)
+    if (numbers.length <= 2) {
+      return numbers;
+    } else if (numbers.length <= 10) {
+      return `${numbers.slice(0, 2)}-${numbers.slice(2)}`;
+    } else {
+      return `${numbers.slice(0, 2)}-${numbers.slice(2, 10)}-${numbers.slice(10, 11)}`;
+    }
+  };
+
+  const validateCUIT = (cuit: string) => {
+    const numbers = cuit.replace(/\D/g, '');
+    return numbers.length === 11;
+  };
+
+  // Validación y formateo de teléfono argentino
+  const formatPhone = (value: string) => {
+    // Eliminar todo excepto números y el +
+    let cleaned = value.replace(/[^\d+]/g, '');
+    
+    // Asegurar que comience con +54
+    if (!cleaned.startsWith('+54')) {
+      if (cleaned.startsWith('54')) {
+        cleaned = '+' + cleaned;
+      } else if (cleaned.startsWith('0')) {
+        cleaned = '+54' + cleaned.slice(1);
+      } else if (cleaned.length > 0) {
+        cleaned = '+54' + cleaned;
+      }
+    }
+    
+    // Formatear: +54 XXX XXX-XXXX
+    const numbers = cleaned.replace(/\D/g, '').slice(2); // Eliminar +54
+    
+    if (numbers.length === 0) {
+      return '+54';
+    } else if (numbers.length <= 3) {
+      return `+54 ${numbers}`;
+    } else if (numbers.length <= 6) {
+      return `+54 ${numbers.slice(0, 3)} ${numbers.slice(3)}`;
+    } else {
+      return `+54 ${numbers.slice(0, 3)} ${numbers.slice(3, 6)}-${numbers.slice(6, 10)}`;
+    }
+  };
+
+  const validatePhone = (phone: string) => {
+    const numbers = phone.replace(/\D/g, '');
+    // +54 + código de área (2-4 dígitos) + número (6-8 dígitos)
+    return numbers.length >= 10 && numbers.length <= 13;
+  };
+
+  const handleFiscalIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatCUIT(e.target.value);
+    setFiscalId(formatted);
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatPhone(e.target.value);
+    setPhone(formatted);
+  };
   const router = useRouter();
 
   useEffect(() => {
@@ -84,7 +151,7 @@ export default function SerOrganizador() {
         const data = await response.json();
         
         if (data.error) {
-          router.push('/login');
+          router.push('/Login');
           return;
         }
 
@@ -143,6 +210,24 @@ export default function SerOrganizador() {
       setSubmitting(false);
       setSuccess(true);
       toast.success("¡Te registraste como organizador exitosamente!");
+      
+      // Forzar actualización completa de sesión
+      try {
+        // Mostrar mensaje al usuario
+        toast.info("Actualizando tu sesión...");
+        
+        // Esperar un momento y forzar logout/login para reiniciar NextAuth
+        setTimeout(async () => {
+          // Forzar logout y login para reiniciar completamente la sesión
+          await signOut({ callbackUrl: '/Login?redirect=DashboardVentas' });
+        }, 1500);
+      } catch (error) {
+        console.error('Error updating session:', error);
+        // Fallback: recargar página completamente
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
     } catch (error) {
       setSubmitting(false);
       toast.error("Error al registrar como organizador");
@@ -259,19 +344,31 @@ export default function SerOrganizador() {
                 <Label className="text-slate-400 text-xs mb-1.5 block">CUIT / Datos fiscales *</Label>
                 <Input
                   value={fiscalId}
-                  onChange={(e) => setFiscalId(e.target.value)}
+                  onChange={handleFiscalIdChange}
                   placeholder="20-12345678-9"
-                  className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-600"
+                  className={`bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-600 ${
+                    fiscalId && !validateCUIT(fiscalId) ? 'border-red-500' : ''
+                  }`}
+                  maxLength={13} // XX-XXXXXXXX-X
                 />
+                {fiscalId && !validateCUIT(fiscalId) && (
+                  <p className="text-red-400 text-xs mt-1">Formato inválido. Ej: 20-12345678-9</p>
+                )}
               </div>
               <div>
-                <Label className="text-slate-400 text-xs mb-1.5 block">Teléfono de contacto</Label>
+                <Label className="text-slate-400 text-xs mb-1.5 block">Teléfono de contacto *</Label>
                 <Input
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+54 11 1234-5678"
-                  className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-600"
+                  onChange={handlePhoneChange}
+                  placeholder="+54 343 455-5678"
+                  className={`bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-600 ${
+                    phone && !validatePhone(phone) ? 'border-red-500' : ''
+                  }`}
+                  maxLength={17} // +54 XXX XXX-XXXX
                 />
+                {phone && !validatePhone(phone) && (
+                  <p className="text-red-400 text-xs mt-1">Formato inválido. Ej: +54 343 455-5678</p>
+                )}
               </div>
             </div>
 
@@ -328,7 +425,7 @@ export default function SerOrganizador() {
 
             <Button
               onClick={handleSubmit}
-              disabled={submitting || !acceptedContract || !businessName || !fiscalId}
+              disabled={submitting || !acceptedContract || !businessName || !fiscalId || !validateCUIT(fiscalId) || Boolean(phone && !validatePhone(phone))}
               className="w-full h-12 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 border-0 shadow-lg shadow-violet-500/25 text-base font-medium disabled:opacity-40"
             >
               {submitting ? (

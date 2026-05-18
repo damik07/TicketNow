@@ -1,52 +1,61 @@
 import { NextResponse, NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
+import { normalizeUserRole, isAdminRole, isOrganizerOrAdmin } from '@/lib/user-role'
 
 export async function middleware(request: NextRequest) {
-  const token = await getToken({ req: request })
-  
-  // Add security headers
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  })
+
   const response = NextResponse.next()
   response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  
+
   const { pathname } = new URL(request.url)
-  
-  // Admin-only routes
+  const role = normalizeUserRole(token?.role)
+
   const adminRoutes = ['/admin', '/AdminPacks']
-  
-  // Organizer routes (require organizer role or admin)
   const organizerRoutes = ['/CrearEvento', '/DashboardVentas', '/GestionStaff']
-  
-  // User routes (require authentication)
   const userRoutes = [
     '/MisCuentas',
-    '/MisConsumiciones', 
+    '/MisConsumiciones',
     '/MisEntradas',
     '/Checkout',
     '/SalaEspera',
   ]
 
-  // Check admin routes
-  if (adminRoutes.some(route => pathname.startsWith(route))) {
+  if (pathname.startsWith('/api/admin')) {
     if (!token) {
-      return NextResponse.redirect(new URL('/login', request.url))
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
-    // Note: Role checking is done at the API level for more granular control
-  }
-  
-  // Check organizer routes
-  if (organizerRoutes.some(route => pathname.startsWith(route))) {
-    if (!token) {
-      return NextResponse.redirect(new URL('/login', request.url))
+    if (!isAdminRole(role)) {
+      return NextResponse.json({ error: 'Prohibido' }, { status: 403 })
     }
-    // Note: Role checking is done at the API level
   }
-  
-  // Check user routes
-  if (userRoutes.some(route => pathname.startsWith(route))) {
+
+  if (adminRoutes.some((route) => pathname.startsWith(route))) {
     if (!token) {
-      return NextResponse.redirect(new URL('/login', request.url))
+      return NextResponse.redirect(new URL('/Login', request.url))
+    }
+    if (!isAdminRole(role)) {
+      return NextResponse.redirect(new URL('/', request.url))
+    }
+  }
+
+  if (organizerRoutes.some((route) => pathname.startsWith(route))) {
+    if (!token) {
+      return NextResponse.redirect(new URL('/Login', request.url))
+    }
+    if (!isOrganizerOrAdmin(role)) {
+      return NextResponse.redirect(new URL('/SerOrganizador', request.url))
+    }
+  }
+
+  if (userRoutes.some((route) => pathname.startsWith(route))) {
+    if (!token) {
+      return NextResponse.redirect(new URL('/Login', request.url))
     }
   }
 

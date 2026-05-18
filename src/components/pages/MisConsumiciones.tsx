@@ -57,7 +57,7 @@ export default function MisConsumiciones() {
         const data = await response.json();
         
         if (data.error) {
-          router.push('/login');
+          router.push('/Login');
           return;
         }
 

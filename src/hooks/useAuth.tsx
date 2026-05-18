@@ -1,40 +1,26 @@
+// src/hooks/useAuth.ts
 'use client';
 
 import { useSession, signIn, signOut } from 'next-auth/react';
-
-interface User {
-  id: string;
-  full_name: string | null;
-  email: string | null;
-  role: string;
-  avatar_url?: string | null;
-}
+import { normalizeUserRole } from '@/lib/user-role';
 
 export function useAuth() {
   const { data: session, status } = useSession();
   
   const user = session?.user ? {
-    id: session.user.email || '', // Use email as ID for now
+    id: session.user.id,
     full_name: session.user.name || null,
     email: session.user.email || null,
-    role: 'user', // This will come from database
+    role: normalizeUserRole(session.user.role),
     avatar_url: session.user.image || null
   } : null;
 
   return {
     user,
-    isAuthenticated: !!user,
+    isAuthenticated: status === 'authenticated',
+    status, // Para que puedas ver "loading", "authenticated" o "unauthenticated"
     isLoadingAuth: status === 'loading',
-    isLoadingPublicSettings: false,
-    authError: null,
-    login: async (email: string, password: string) => {
-      window.location.href = '/api/auth/signin';
-    },
-    googleLogin: async () => {
-      window.location.href = '/api/auth/signin';
-    },
-    logout: async () => {
-      await signOut();
-    }
+    login: () => signIn('google'),
+    logout: () => signOut({ callbackUrl: '/' }) // Redirige al home tras salir
   };
 }

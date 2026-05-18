@@ -8,11 +8,29 @@ import EventCard from "@/components/landing/EventCard";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
+type Category = "musica" | "deportes" | "teatro" | "conferencia" | "festival" | "fiesta" | "gastronomia" | "otro";
+
+interface Event {
+  id: string;
+  title: string;
+  date_time?: string;
+  location_name: string;
+  category?: Category;
+  banner_url?: string;
+  min_price?: number;
+  featured?: boolean;
+}
+
+interface CategoryOption {
+  value: string;
+  label: string;
+}
+
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [category, setCategory] = useState("all");
-  const [categories, setCategories] = useState([]);
-  const [events, setEvents] = useState([]);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,8 +42,8 @@ export default function Home() {
         
         // Fetch categories from events
         const categoriesFromEvents = Array.from(
-          new Set(eventsData.map((event: any) => event.category))
-        ).map(category => ({
+          new Set(eventsData.map((event: Event) => event.category).filter(Boolean)) as Set<string>
+        ).map((category: string) => ({
           value: category,
           label: category.charAt(0).toUpperCase() + category.slice(1)
         }));
@@ -98,7 +116,7 @@ export default function Home() {
           </div>
 
           <div className="mb-8">
-            <CategoryFilter selected={category} onChange={setCategory} categories={categories} />
+            <CategoryFilter selected={category} onChange={setCategory} />
           </div>
 
           {loading ? (

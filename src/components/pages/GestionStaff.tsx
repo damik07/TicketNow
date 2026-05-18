@@ -9,32 +9,37 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Plus, QrCode, Loader2, UserCheck, Search, Camera, DollarSign } from "lucide-react";
+import { Users, Plus, QrCode, Loader2, UserCheck, Search, Camera, DollarSign, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 import QRScanner from "@/components/scanner/QRScanner";
 
 interface User {
   id: string;
-  full_name: string;
+  full_name: string | null;
   email: string;
   role: string;
+  active: boolean;
+  organizerName?: string;
+  organizerEmail?: string;
+  staffMemberId?: string;
 }
 
 interface Ticket {
   id: string;
-  qr_code: string;
-  ticket_type_name: string;
-  user_id: string;
-  event_id: string;
-  event_title: string;
-  usage_status: string;
-  consumption_balance?: number;
-  consumption_initial?: number;
+  qrCode: string;
+  ticketTypeName: string;
+  userId: string;
+  eventId: string;
+  eventTitle: string;
+  usageStatus: string;
+  consumptionBalance?: number;
+  consumptionInitial?: number;
 }
 
 export default function GestionStaff() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const { user, isAuthenticated, isLoadingAuth } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -49,55 +54,81 @@ export default function GestionStaff() {
 
   useEffect(() => {
     const loadData = async () => {
-      const timer = setTimeout(() => {
-        // Mock user data
-        const mockUser: User = {
-          id: "1",
-          full_name: "Administrador Test",
-          email: "admin@test.com",
-          role: "admin"
-        };
-        setUser(mockUser);
+      if (!isAuthenticated || !user) {
+        router.push('/Login');
+        return;
+      }
 
-        // Mock users data
-        const mockUsers: User[] = [
-          {
-            id: "1",
-            full_name: "Administrador Test",
-            email: "admin@test.com",
-            role: "admin"
-          },
-          {
-            id: "2",
-            full_name: "Juan Pérez",
-            email: "juan@test.com",
-            role: "productor"
-          },
-          {
-            id: "3",
-            full_name: "María García",
-            email: "maria@test.com",
-            role: "staff"
-          },
-          {
-            id: "4",
-            full_name: "Carlos López",
-            email: "carlos@test.com",
-            role: "staff"
+      // Validar que sea staff, organizador o admin
+      if (!['ORGANIZER', 'ADMIN'].includes(user.role)) {
+        toast.error("No tienes permisos para acceder a esta sección. Debes ser organizador.");
+        router.push('/SerOrganizador');
+        return;
+      }
+
+      try {
+        let staffData = [];
+        
+        if (user.role === 'ADMIN') {
+          // Admin ve todo el staff
+          const staffRes = await fetch('/api/organizer/staff');
+          if (staffRes.ok) {
+            const result = await staffRes.json();
+            staffData = result.staffMembers || [];
+          } else {
+            console.error('Error fetching staff:', staffRes.status);
+            toast.error('Error al cargar los equipos');
           }
-        ];
-
-        setUsers(mockUsers);
+        } else if (user.role === 'ORGANIZER') {
+          // Organizador ve solo su staff
+          const staffRes = await fetch('/api/organizer/staff');
+          if (staffRes.ok) {
+            const result = await staffRes.json();
+            staffData = result.staffMembers || [];
+          } else {
+            console.error('Error fetching staff:', staffRes.status);
+            toast.error('Error al cargar tu equipo');
+          }
+        }
+        
+        setUsers(staffData);
         setLoading(false);
-      }, 1000);
-      
-      return () => clearTimeout(timer);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast.error('Error al cargar los datos');
+        setUsers([]);
+        setLoading(false);
+      }
     };
-    
-    loadData();
-  }, []);
 
-  const staffUsers = users.filter((u) => u.role === "staff" || u.role === "productor" || u.role === "admin");
+    if (!isLoadingAuth) {
+      loadData();
+    }
+  }, [isAuthenticated, user, isLoadingAuth, router]);
+
+  const staffUsers = users.filter((u) => u.role === "USER" || u.role === "ORGANIZER" || u.role === "ADMIN" || u.role === "STAFF");
+
+  const handleRemoveStaff = async (staffMember: any) => {
+    if (!confirm(`¿Estás seguro que quieres eliminar a ${staffMember.email} del equipo?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/organizer/staff/${staffMember.staffMemberId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to remove staff member');
+      }
+
+      setUsers(prev => prev.filter(u => u.id !== staffMember.id));
+      toast.success(`Miembro eliminado del equipo`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Error al eliminar miembro del equipo");
+    }
+  };
 
   const handleInvite = async () => {
     if (!newEmail.trim()) {
@@ -105,28 +136,42 @@ export default function GestionStaff() {
       return;
     }
 
+    // Solo organizadores pueden invitar staff
+    if (user?.role !== 'ORGANIZER') {
+      toast.error("Solo los organizadores pueden invitar miembros a su equipo");
+      return;
+    }
+
     setInviting(true);
     
     try {
-      // TODO: Implement Next.js API call for user invitation
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const response = await fetch('/api/organizer/staff', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: newEmail,
+          role: newRole.toUpperCase(),
+          permissions: {}
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to invite staff member');
+      }
+
+      const newStaffMember = await response.json();
       
-      // Simulate invitation
-      const newUser: User = {
-        id: Date.now().toString(),
-        full_name: newEmail.split("@")[0],
-        email: newEmail,
-        role: newRole === "admin" ? "admin" : "user"
-      };
-      
-      setUsers(prev => [...prev, newUser]);
+      setUsers(prev => [...prev, newStaffMember]);
       setInviting(false);
       setDialogOpen(false);
       setNewEmail("");
-      toast.success(`Invitación enviada a ${newEmail}`);
+      toast.success(`Miembro agregado al equipo: ${newEmail}`);
     } catch (error) {
       setInviting(false);
-      toast.error("Error al enviar invitación");
+      toast.error(error instanceof Error ? error.message : "Error al agregar miembro al equipo");
     }
   };
 
@@ -138,44 +183,18 @@ export default function GestionStaff() {
     setShowCamera(false);
 
     try {
-      // TODO: Implement Next.js API call for ticket validation
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // API call para buscar ticket por QR
+      const response = await fetch(`/api/tickets/qr/${qrCode}`);
       
-      // Simulate ticket lookup
-      const mockTickets: Ticket[] = [
-        {
-          id: "1",
-          qr_code: "QR-123456789",
-          ticket_type_name: "General",
-          user_id: "user1",
-          event_id: "1",
-          event_title: "Festival de Música 2024",
-          usage_status: "no_usado"
-        },
-        {
-          id: "2",
-          qr_code: "QR-987654321",
-          ticket_type_name: "Consumición VIP",
-          user_id: "user2",
-          event_id: "1",
-          event_title: "Festival de Música 2024",
-          usage_status: "no_usado",
-          consumption_balance: 5000,
-          consumption_initial: 5000
-        }
-      ];
-
-      const ticket = mockTickets.find(t => t.qr_code === qrCode);
-      
-      if (!ticket) {
-        toast.error("Código QR no encontrado");
-        setValidating(false);
-        setQrInput("");
-        return;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Ticket not found');
       }
+
+      const ticket: Ticket = await response.json();
       
-      const isConsumption = ticket.ticket_type_name?.toLowerCase().includes("consumición") || 
-                           ticket.ticket_type_name?.toLowerCase().includes("consumicion");
+      const isConsumption = ticket.ticketTypeName?.toLowerCase().includes("consumición") || 
+                           ticket.ticketTypeName?.toLowerCase().includes("consumicion");
 
       if (isConsumption) {
         // Handle consumption ticket
@@ -186,17 +205,25 @@ export default function GestionStaff() {
           return;
         }
         
-        const currentBalance = ticket.consumption_balance ?? (ticket.consumption_initial || 0);
+        const currentBalance = ticket.consumptionBalance ?? (ticket.consumptionInitial || 0);
         
         if (currentBalance >= amount) {
-          const newBalance = currentBalance - amount;
-          // Simulate balance update and transaction
-          console.log("Consumption processed:", {
-            ticketId: ticket.id,
-            amount,
-            currentBalance,
-            newBalance
+          // API call para procesar consumo
+          const consumeResponse = await fetch(`/api/tickets/${ticket.id}/consume`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ amount })
           });
+
+          if (!consumeResponse.ok) {
+            const error = await consumeResponse.json();
+            throw new Error(error.error || 'Failed to process consumption');
+          }
+
+          const result = await consumeResponse.json();
+          const newBalance = result.newBalance;
           
           toast.success(`✓ Consumo aplicado: $${amount.toLocaleString("es-AR")}. Saldo restante: $${newBalance.toLocaleString("es-AR")}`);
         } else {
@@ -206,23 +233,31 @@ export default function GestionStaff() {
         setConsumptionAmount("");
       } else {
         // Handle regular entry ticket
-        if (ticket.usage_status === "ingresado") {
+        if (ticket.usageStatus === "ingresado") {
           toast.error("Esta entrada ya fue utilizada");
           setValidating(false);
           setQrInput("");
           return;
         }
         
-        // Simulate ticket validation
-        console.log("Ticket validated:", ticket);
-        toast.success(`✓ Entrada validada: ${ticket.event_title} - ${ticket.ticket_type_name}`);
+        // API call para validar entrada
+        const validateResponse = await fetch(`/api/tickets/${ticket.id}/validate`, {
+          method: 'POST'
+        });
+
+        if (!validateResponse.ok) {
+          const error = await validateResponse.json();
+          throw new Error(error.error || 'Failed to validate ticket');
+        }
+
+        toast.success(`✓ Entrada validada: ${ticket.eventTitle} - ${ticket.ticketTypeName}`);
       }
       
       setValidating(false);
       setQrInput("");
     } catch (error) {
       setValidating(false);
-      toast.error("Error al validar el código QR");
+      toast.error(error instanceof Error ? error.message : "Error al validar el código QR");
     }
   };
 
@@ -364,18 +399,20 @@ export default function GestionStaff() {
                   <TableHead className="text-slate-500">Nombre</TableHead>
                   <TableHead className="text-slate-500">Email</TableHead>
                   <TableHead className="text-slate-500">Rol</TableHead>
+                  {user?.role === 'ADMIN' && <TableHead className="text-slate-500">Organizador</TableHead>}
+                  {(user?.role === 'ORGANIZER' || user?.role === 'ADMIN') && <TableHead className="text-slate-500">Acciones</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
+                {loading || isLoadingAuth ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8">
+                    <TableCell colSpan={user?.role === 'ADMIN' ? 5 : user?.role === 'ORGANIZER' ? 4 : 3} className="text-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-violet-500 mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : staffUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center text-slate-500 py-8">
+                    <TableCell colSpan={user?.role === 'ADMIN' ? 5 : user?.role === 'ORGANIZER' ? 4 : 3} className="text-center text-slate-500 py-8">
                       No hay miembros del equipo
                     </TableCell>
                   </TableRow>
@@ -393,13 +430,31 @@ export default function GestionStaff() {
                       <TableCell className="text-slate-400 text-sm">{u.email}</TableCell>
                       <TableCell>
                         <Badge className={`border text-xs ${
-                          u.role === "admin" ? "bg-red-500/10 text-red-400 border-red-500/30" :
-                          u.role === "productor" ? "bg-violet-500/10 text-violet-400 border-violet-500/30" :
+                          u.role === "ADMIN" ? "bg-red-500/10 text-red-400 border-red-500/30" :
+                          u.role === "ORGANIZER" ? "bg-violet-500/10 text-violet-400 border-violet-500/30" :
                           "bg-blue-500/10 text-blue-400 border-blue-500/30"
                         }`}>
                           {u.role}
                         </Badge>
                       </TableCell>
+                      {user?.role === 'ADMIN' && (
+                        <TableCell className="text-slate-400 text-sm">
+                          {u.organizerName || 'N/A'}
+                        </TableCell>
+                      )}
+                      {(user?.role === 'ORGANIZER' || user?.role === 'ADMIN') && (
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveStaff(u)}
+                            className="text-slate-400 hover:text-red-400 h-8 w-8"
+                            disabled={u.role === 'ADMIN'} // No se puede eliminar admin
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}

@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Search, Shield, UserCheck, UserX, Edit, Loader2 } from 'lucide-react';
+import { Users, Search, Shield, UserCheck, UserX, Edit, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserRole, getRoleDisplayName } from '@/lib/permissions';
 
@@ -40,7 +40,7 @@ export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 10,
@@ -52,6 +52,17 @@ export default function UserManagement() {
   const [newRole, setNewRole] = useState<UserRole>(UserRole.USER);
   const [newActive, setNewActive] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [createDialog, setCreateDialog] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [newUser, setNewUser] = useState({
+    email: '',
+    full_name: '',
+    role: UserRole.USER,
+    active: true
+  });
 
   useEffect(() => {
     loadUsers();
@@ -64,7 +75,7 @@ export default function UserManagement() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         ...(search && { search }),
-        ...(roleFilter && { role: roleFilter })
+        ...(roleFilter && roleFilter !== 'all' && { role: roleFilter })
       });
 
       const response = await fetch(`/api/admin/users?${params}`);
@@ -130,6 +141,81 @@ export default function UserManagement() {
     }
   };
 
+  const handleCreateUser = async () => {
+    if (!newUser.email) {
+      toast.error('El email es requerido');
+      return;
+    }
+
+    try {
+      setCreating(true);
+      const response = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newUser)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create user');
+      }
+
+      const createdUser = await response.json();
+      
+      // Reset form and close dialog
+      setNewUser({
+        email: '',
+        full_name: '',
+        role: UserRole.USER,
+        active: true
+      });
+      setCreateDialog(false);
+      
+      // Reload users to show the new user
+      loadUsers();
+      toast.success('Usuario creado correctamente');
+    } catch (error) {
+      console.error('Failed to create user:', error);
+      toast.error(error instanceof Error ? error.message : 'Error al crear usuario');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const openDeleteDialog = (user: User) => {
+    setDeletingUser(user);
+    setDeleteDialog(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deletingUser) return;
+
+    try {
+      setDeleting(true);
+      const response = await fetch(`/api/admin/users?userId=${deletingUser.id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete user');
+      }
+
+      // Remove user from local state
+      setUsers(users.filter(u => u.id !== deletingUser.id));
+      setDeleteDialog(false);
+      setDeletingUser(null);
+      toast.success('Usuario eliminado correctamente');
+    } catch (error) {
+      console.error('Failed to delete user:', error);
+      toast.error(error instanceof Error ? error.message : 'Error al eliminar usuario');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const getRoleBadgeVariant = (role: UserRole) => {
     switch (role) {
       case UserRole.ADMIN:
@@ -150,6 +236,13 @@ export default function UserManagement() {
           <h1 className="text-3xl font-bold text-white">Gestión de Usuarios</h1>
           <p className="text-slate-400">Administra usuarios y roles de la plataforma</p>
         </div>
+        <Button
+          onClick={() => setCreateDialog(true)}
+          className="bg-violet-600 hover:bg-violet-700"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Nuevo Usuario
+        </Button>
       </div>
 
       {/* Filters */}
@@ -179,7 +272,7 @@ export default function UserManagement() {
                   <SelectValue placeholder="Todos los roles" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos los roles</SelectItem>
+                  <SelectItem value="all">Todos los roles</SelectItem>
                   <SelectItem value={UserRole.USER}>Usuario</SelectItem>
                   <SelectItem value={UserRole.ORGANIZER}>Organizador</SelectItem>
                   <SelectItem value={UserRole.ADMIN}>Administrador</SelectItem>
@@ -262,14 +355,24 @@ export default function UserManagement() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditDialog(user)}
-                          className="text-violet-400 hover:text-violet-300"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditDialog(user)}
+                            className="text-violet-400 hover:text-violet-300"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openDeleteDialog(user)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -369,6 +472,133 @@ export default function UserManagement() {
                 <Button
                   variant="outline"
                   onClick={() => setEditDialog(false)}
+                  className="flex-1"
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create User Dialog */}
+      <Dialog open={createDialog} onOpenChange={setCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Crear Nuevo Usuario</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="usuario@ejemplo.com"
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="full_name">Nombre Completo</Label>
+              <Input
+                id="full_name"
+                placeholder="Juan Pérez"
+                value={newUser.full_name}
+                onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="role">Rol</Label>
+              <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value as UserRole })}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UserRole.USER}>Usuario</SelectItem>
+                  <SelectItem value={UserRole.ORGANIZER}>Organizador</SelectItem>
+                  <SelectItem value={UserRole.ADMIN}>Administrador</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="active">Estado</Label>
+              <Select value={newUser.active.toString()} onValueChange={(value) => setNewUser({ ...newUser, active: value === 'true' })}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">Activo</SelectItem>
+                  <SelectItem value="false">Inactivo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                onClick={handleCreateUser}
+                disabled={creating}
+                className="flex-1"
+              >
+                {creating ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
+                Crear Usuario
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setCreateDialog(false)}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Dialog */}
+      <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-500">Eliminar Usuario</DialogTitle>
+          </DialogHeader>
+          {deletingUser && (
+            <div className="space-y-4">
+              <div className="text-slate-300">
+                ¿Estás seguro de que quieres eliminar al usuario <span className="font-semibold text-white">{deletingUser.full_name || deletingUser.email}</span>?
+              </div>
+              
+              <div className="bg-red-900/20 border border-red-500/30 rounded p-3">
+                <div className="text-sm text-red-400">
+                  <strong>Advertencia:</strong> Esta acción no se puede deshacer. El usuario y todos sus datos asociados serán eliminados permanentemente.
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button
+                  onClick={handleDeleteUser}
+                  disabled={deleting}
+                  variant="destructive"
+                  className="flex-1"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Eliminar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteDialog(false)}
                   className="flex-1"
                 >
                   Cancelar

@@ -1,7 +1,8 @@
+// src/components/providers/NextAuthProvider.tsx
 'use client';
 
 import { SessionProvider } from "next-auth/react";
-import { authOptions } from "@/lib/auth";
+
 
 interface NextAuthProviderProps {
   children: React.ReactNode;
@@ -9,7 +10,7 @@ interface NextAuthProviderProps {
 
 export function NextAuthProvider({ children }: NextAuthProviderProps) {
   return (
-    <SessionProvider session={null}>
+    <SessionProvider refetchInterval={60} refetchOnWindowFocus>
       {children}
     </SessionProvider>
   );

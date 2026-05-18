@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 
 import StatsGrid from "@/components/dashboard/StatsGrid";
 import SalesChart from "@/components/dashboard/SalesChart";
@@ -27,7 +28,7 @@ interface Event {
   title: string;
   location_name: string;
   date_time: string;
-  status: string;
+  status: 'borrador' | 'publicado' | 'finalizado' | 'cancelado';
   created_date: string;
   total_capacity?: number;
   min_price?: number;
@@ -65,7 +66,7 @@ interface Ticket {
 
 export default function DashboardVentas() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const { user, isAuthenticated, isLoadingAuth } = useAuth();
   const [organizer, setOrganizer] = useState<Organizer | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
@@ -74,30 +75,25 @@ export default function DashboardVentas() {
 
   useEffect(() => {
     const loadData = async () => {
+      if (!isAuthenticated || !user) {
+        router.push('/Login');
+        return;
+      }
+
+      // Check if user has required role
+      if (user.role !== 'ORGANIZER' && user.role !== 'ADMIN') {
+        toast.error("No tienes permisos para acceder al dashboard. Debes ser organizador.");
+        router.push('/SerOrganizador');
+        return;
+      }
+
       try {
-        // Get current session
-        const response = await fetch('/api/auth/me');
-        const data = await response.json();
-        
-        if (data.error) {
-          router.push('/login');
-          return;
-        }
-
-        if (data.user.role !== 'organizer') {
-          toast.error('No tienes permisos de organizador');
-          router.push('/');
-          return;
-        }
-
-        setUser(data.user);
-
         // Get organizer data
-        const organizerResponse = await fetch(`/api/organizers?userId=${data.user.id}`);
+        const organizerResponse = await fetch(`/api/organizers?userId=${user.id}`);
         const organizersData = await organizerResponse.json();
         
         if (organizersData.error || !organizersData.length) {
-          toast.error('No tienes cuenta de organizador');
+          toast.error("No se encontró tu cuenta de organizador");
           router.push('/SerOrganizador');
           return;
         }
@@ -130,8 +126,10 @@ export default function DashboardVentas() {
       }
     };
     
-    loadData();
-  }, [router]);
+    if (!isLoadingAuth) {
+      loadData();
+    }
+  }, [isAuthenticated, user, isLoadingAuth, router]);
 
   return (
     <div className="min-h-screen bg-slate-950 py-24">
@@ -141,7 +139,7 @@ export default function DashboardVentas() {
           <p className="text-slate-500 mt-1">Reportes en tiempo real de tus eventos</p>
         </div>
 
-        {loading ? (
+        {loading || isLoadingAuth ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
           </div>
@@ -149,7 +147,18 @@ export default function DashboardVentas() {
           <div className="space-y-6">
             <StatsGrid events={events} orders={allOrders} tickets={allTickets} />
             <SalesChart orders={allOrders} />
-            <EventsTable events={events} orders={allOrders} />
+            <EventsTable 
+              events={events} 
+              orders={allOrders} 
+              onEventUpdate={() => {
+                // Refrescar datos de eventos
+                loadData();
+              }}
+              onEventDelete={() => {
+                // Refrescar datos de eventos
+                loadData();
+              }}
+            />
           </div>
         )}
       </div>
