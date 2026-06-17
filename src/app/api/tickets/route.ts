@@ -1,3 +1,5 @@
+// app/api/tickets/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -8,11 +10,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url!)
     const eventId = searchParams.get('eventId')
     const userId = searchParams.get('userId')
+    const organizerId = searchParams.get('organizerId')
 
     const tickets = await prisma.ticket.findMany({
       where: {
         ...(eventId && { eventId }),
         ...(userId && { userId }),
+        // 2. Si viene un organizerId en la query, filtramos por él en la Base de Datos
+        ...(organizerId && {
+          event: {
+            organizerId: organizerId
+          }
+        }),
       },
       include: {
         order: {
@@ -47,7 +56,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions, request)
+    const session = await getServerSession(authOptions)
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -85,7 +94,7 @@ export async function POST(request: NextRequest) {
           ticketTypeName: ticketType.name,
           qrCode: `${qrCode}-${i + 1}`,
           usageStatus: 'no_usado',
-          holderName: session.user.full_name || 'User',
+          holderName: session.user.name || 'User',
           holderEmail: session.user.email || '',
           consumptionBalance: ticketType.name.toLowerCase().includes('consumición') ? ticketType.price : 0,
           consumptionInitial: ticketType.name.toLowerCase().includes('consumición') ? ticketType.price : 0,

@@ -6,66 +6,33 @@ import FeaturedSlider from "@/components/landing/FeaturedSlider";
 import CategoryFilter from "@/components/landing/CategoryFilter";
 import EventCard from "@/components/landing/EventCard";
 import { Loader2 } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
 
 type Category = "musica" | "deportes" | "teatro" | "conferencia" | "festival" | "fiesta" | "gastronomia" | "otro";
 
+// 1. Corregimos la interfaz a camelCase para alinearnos perfectamente con Prisma y el Slider
 interface Event {
   id: string;
   title: string;
-  date_time?: string;
-  location_name: string;
+  dateTime: string;       // Cambiado de date_time
+  locationName: string;   // Cambiado de location_name
   category?: Category;
-  banner_url?: string;
-  min_price?: number;
-  featured?: boolean;
-}
-
-interface CategoryOption {
-  value: string;
-  label: string;
+  bannerUrl?: string;     // Cambiado de banner_url
+  minPrice?: number;      // Cambiado de min_price
+  packId?: string | null;  // Identificador de paquete premium para destacados
 }
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [category, setCategory] = useState("all");
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadEvents = async () => {
       try {
-        // Fetch events from API
         const response = await fetch('/api/events');
         const eventsData = await response.json();
         
-        // Fetch categories from events
-        const categoriesFromEvents = Array.from(
-          new Set(eventsData.map((event: Event) => event.category).filter(Boolean)) as Set<string>
-        ).map((category: string) => ({
-          value: category,
-          label: category.charAt(0).toUpperCase() + category.slice(1)
-        }));
-        
-        // Add default categories if needed
-        const allCategories = [
-          { value: "musica", label: "Música" },
-          { value: "deportes", label: "Deportes" },
-          { value: "teatro", label: "Teatro" },
-          { value: "conferencia", label: "Conferencia" },
-          { value: "festival", label: "Festival" },
-          { value: "fiesta", label: "Fiesta" },
-          { value: "gastronomia", label: "Gastronomía" },
-          { value: "otro", label: "Otro" },
-        ];
-        
-        // Merge categories from events with default categories
-        const mergedCategories = allCategories.filter(cat => 
-          categoriesFromEvents.some(eventCat => eventCat.value === cat.value)
-        );
-        
-        setCategories(mergedCategories);
         setEvents(eventsData);
         setLoading(false);
       } catch (error) {
@@ -77,16 +44,26 @@ export default function Home() {
     loadEvents();
   }, []);
 
+  // 2. Filtro corregido apuntando a las nuevas propiedades de Prisma (con opcionales seguros)
   const filtered = events.filter((ev) => {
     const matchSearch =
       !searchQuery ||
       ev.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ev.location_name?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchCat = category === "all" || ev.category === category;
+      ev.locationName?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const currentEventCat = ev.category?.toLowerCase().trim() || "";
+    const selectedCat = category.toLowerCase().trim();
+
+    const matchCat = selectedCat === "all" || currentEventCat === selectedCat;
+
     return matchSearch && matchCat;
   });
 
-  const featured = events.filter((ev) => ev.featured);
+  // 3. Lógica inteligente de destacados:
+  // Filtra primero los eventos que tienen un pack asignado (Destacados/Premium).
+  // Si todavía no hay eventos con pack asignados, toma los primeros 4 para mantener el Home vistoso.
+  const premiumEvents = events.filter((ev) => ev.packId !== undefined && ev.packId !== null);
+  const featured = premiumEvents.length > 0 ? premiumEvents : events.slice(0, 4);
 
   return (
     <>
@@ -131,6 +108,8 @@ export default function Home() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filtered.map((event, i) => (
+                // Pasamos las propiedades correctas. 
+                // Asegurate de que dentro de EventCard también uses camelCase (event.bannerUrl, etc.)
                 <EventCard key={event.id} event={event} index={i} />
               ))}
             </div>

@@ -1,8 +1,56 @@
+// ...app\api\events\[id]\route.tx
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { UserRole } from '@/lib/permissions'
+import { parseLocalDate } from "@/utils/date";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Buscamos al usuario organizador
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email }
+    })
+
+    const organizer = await prisma.organizer.findUnique({
+      where: { userId: user?.id }
+    })
+
+    if (!organizer) {
+      return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
+    }
+
+    // Buscamos el evento incluyendo sus categorías de tickets
+    const event = await prisma.event.findUnique({
+      where: {
+        id: params.id,
+        organizerId: organizer.id // Seguridad: solo el dueño puede leerlo para editar
+      },
+      include: {
+        ticketTypes: true // Clave para rellenar la sección de entradas en el formulario
+      }
+    })
+
+    if (!event) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 })
+    }
+
+    return NextResponse.json(event)
+  } catch (error) {
+    console.error('Event GET error:', error)
+    return NextResponse.json({ error: 'Failed to fetch event data' }, { status: 500 })
+  }
+}
 
 export async function DELETE(
   request: NextRequest,
@@ -31,9 +79,9 @@ export async function DELETE(
 
     // Check if the event belongs to this organizer
     const event = await prisma.event.findUnique({
-      where: { 
+      where: {
         id: eventId,
-        organizerId: organizer.id 
+        organizerId: organizer.id
       }
     })
 
@@ -63,7 +111,6 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user is an organizer
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
@@ -77,13 +124,12 @@ export async function PUT(
     }
 
     const eventId = params.id
-    const { title, description, dateTime, endDateTime, locationName, locationAddress, category, bannerUrl, status } = await request.json()
+    const { title, description, dateTime, endDateTime, locationName, locationAddress, category, bannerUrl, status, ticketTypes, maxConcurrent, queueActive } = await request.json()
 
-    // Check if the event belongs to this organizer
     const existingEvent = await prisma.event.findUnique({
-      where: { 
+      where: {
         id: eventId,
-        organizerId: organizer.id 
+        organizerId: organizer.id
       }
     })
 
@@ -91,19 +137,59 @@ export async function PUT(
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
-    const updatedEvent = await prisma.event.update({
-      where: { id: eventId },
-      data: {
-        title,
-        description,
-        dateTime: dateTime ? new Date(dateTime) : existingEvent.dateTime,
-        endDateTime: endDateTime ? new Date(endDateTime) : existingEvent.endDateTime,
-        locationName,
-        locationAddress,
-        category,
-        bannerUrl,
-        status: status || existingEvent.status
+    // Calculamos minPrice y totalCapacity de forma dinámica si se actualizaron los tickets
+    let minPrice = existingEvent.minPrice;
+    let totalCapacity = existingEvent.totalCapacity;
+
+    if (ticketTypes && Array.isArray(ticketTypes) && ticketTypes.length > 0) {
+      const cleanPrices = ticketTypes.map((t: any) => Number(t.price) || 0);
+      minPrice = Math.min(...cleanPrices);
+      totalCapacity = ticketTypes.reduce((sum: number, t: any) => sum + (Number(t.stockTotal) || 0), 0);
+    }
+
+    // Usamos una transacción para actualizar el evento y refrescar las entradas
+    const updatedEvent = await prisma.$transaction(async (tx) => {
+      // 1. Si se enviaron tipos de ticket, borramos los existentes de este evento primero
+      if (ticketTypes && Array.isArray(ticketTypes)) {
+        await tx.ticketType.deleteMany({
+          where: { eventId: eventId }
+        })
       }
+
+      // 2. Actualizamos el evento y creamos los nuevos tipos de ticket simultáneamente
+      return await tx.event.update({
+        where: { id: eventId },
+        data: {
+          title,
+          description,
+          // Aplica parseLocalDate para guardar las fechas exactas sin desfases UTC
+          dateTime: dateTime ? parseLocalDate(dateTime)! : existingEvent.dateTime,
+          endDateTime: endDateTime ? parseLocalDate(endDateTime) : existingEvent.endDateTime,
+          locationName,
+          locationAddress,
+          category,
+          bannerUrl,
+          minPrice,
+          totalCapacity,
+          ...(maxConcurrent !== undefined && { maxConcurrent: Math.max(1, Number(maxConcurrent) || 50) }),
+          ...(queueActive !== undefined && { queueActive: Boolean(queueActive) }),
+          status: status || existingEvent.status,
+          ticketTypes: ticketTypes && Array.isArray(ticketTypes) ? {
+            create: ticketTypes.map((tt: any, index: number) => ({
+              name: tt.name,
+              description: tt.description || '',
+              price: Number(tt.price) || 0,
+              stockTotal: Number(tt.stockTotal) || 0,
+              stockAvailable: Number(tt.stockTotal) || 0, // Reinicializa stock con la edición
+              maxPerUser: Number(tt.maxPerUser) || 4,
+              sortOrder: index
+            }))
+          } : undefined
+        },
+        include: {
+          ticketTypes: true
+        }
+      })
     })
 
     return NextResponse.json(updatedEvent)

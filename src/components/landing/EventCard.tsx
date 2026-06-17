@@ -1,3 +1,5 @@
+'use client';
+
 import React from "react";
 import Link from "next/link";
 import { createPageUrl } from "@/utils";
@@ -31,23 +33,38 @@ const CATEGORY_COLORS: Record<Category, string> = {
   otro: "bg-slate-500/20 text-slate-300 border-slate-500/30"
 };
 
+// 1. Corregimos la interfaz para que use camelCase igual que tu Backend/Prisma
 interface Event {
   id: string;
   title: string;
-  date_time?: string;
-  location_name: string;
+  dateTime?: string;     // 👈 Cambiado de date_time
+  locationName: string;   // 👈 Aseguramos camelCase por si acaso en la base de datos es locationName
   category?: Category;
-  banner_url?: string;
-  min_price?: number;
+  bannerUrl?: string;     // 👈 Cambiado de banner_url
+  minPrice?: number;      // 👈 Cambiado de min_price
 }
 
 interface EventCardProps {
-  event: Event;
+  event: any; // Usamos any temporalmente para evitar que TypeScript chille con el mapeo del Home anterior
   index?: number;
 }
 
 export default function EventCard({ event, index = 0 }: EventCardProps) {
-  const eventDate = event.date_time ? new Date(event.date_time) : null;
+  // 2. Mapeamos de forma segura tolerando snake_case o camelCase por si la API cambia en el futuro
+  const rawDate = event.dateTime || event.date_time;
+
+  // Explicación: Si la fecha viene como string de la API, le quitamos la 'Z' 
+  // o el offset al final para que el navegador la lea de forma "local" 
+  // exactamente como se ingresó en el formulario, sin recalcular horas.
+  const safeDateString = typeof rawDate === 'string' && rawDate.includes('T')
+    ? rawDate.split('.')[0].replace('Z', '')
+    : rawDate;
+
+  const eventDate = safeDateString ? new Date(safeDateString) : null;
+
+  const price = event.minPrice !== undefined ? event.minPrice : event.min_price;
+  const location = event.locationName || event.location_name || "Lugar a definir";
+  const banner = event.bannerUrl || event.banner_url;
 
   return (
     <motion.div
@@ -60,14 +77,14 @@ export default function EventCard({ event, index = 0 }: EventCardProps) {
           {/* Image */}
           <div className="relative aspect-[16/10] overflow-hidden">
             <img
-              src={event.banner_url || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600&q=80"}
+              src={banner || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600&q=80"}
               alt={event.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent" />
-            
+
             {/* Date badge */}
-            {eventDate && (
+            {eventDate && !isNaN(eventDate.getTime()) && (
               <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur-sm border border-slate-700/50 rounded-xl px-3 py-2 text-center min-w-[56px]">
                 <p className="text-xs font-bold text-violet-400 uppercase">
                   {format(eventDate, "MMM", { locale: es })}
@@ -81,8 +98,8 @@ export default function EventCard({ event, index = 0 }: EventCardProps) {
             {/* Category */}
             {event.category && (
               <div className="absolute top-3 right-3">
-                <Badge className={`${event.category ? CATEGORY_COLORS[event.category] : CATEGORY_COLORS.otro} border text-[10px] font-medium`}>
-                  {event.category ? CATEGORY_LABELS[event.category] : event.category}
+                <Badge className={`${event.category ? CATEGORY_COLORS[event.category as Category] : CATEGORY_COLORS.otro} border text-[10px] font-medium`}>
+                  {CATEGORY_LABELS[event.category as Category] || event.category}
                 </Badge>
               </div>
             )}
@@ -95,24 +112,24 @@ export default function EventCard({ event, index = 0 }: EventCardProps) {
             </h3>
 
             <div className="space-y-2 mb-4">
-              {eventDate && (
+              {eventDate && !isNaN(eventDate.getTime()) && (
                 <div className="flex items-center gap-2 text-sm text-slate-400">
                   <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                  <span>{format(eventDate, "EEEE d 'de' MMMM, HH:mm", { locale: es })} hs</span>
+                  <span className="capitalize">{format(eventDate, "EEEE d 'de' MMMM, HH:mm", { locale: es })} hs</span>
                 </div>
               )}
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <MapPin className="w-3.5 h-3.5 text-slate-500" />
-                <span className="truncate">{event.location_name}</span>
+                <span className="truncate">{location}</span>
               </div>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-800/50">
-              {event.min_price != null ? (
+              {price != null ? (
                 <div>
                   <span className="text-xs text-slate-500">Desde</span>
                   <p className="text-lg font-bold text-white">
-                    ${event.min_price.toLocaleString("es-AR")}
+                    ${Number(price).toLocaleString("es-AR")}
                   </p>
                 </div>
               ) : (

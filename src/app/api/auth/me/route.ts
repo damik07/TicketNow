@@ -27,7 +27,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ user })
+    // 💡 1. CAPTURAMOS EL eventId DE LA URL (SI ES QUE VIENE)
+    const { searchParams } = new URL(request.url)
+    const eventId = searchParams.get("eventId")
+
+    let ticketsBought = 0
+
+    // 💡 2. SI VIENE EL eventId, CONTAMOS LOS TICKETS CON ORDENES APROBADAS
+    if (eventId) {
+      ticketsBought = await prisma.ticket.count({
+        where: {
+          eventId: eventId,
+          userId: user.id,
+          order: {
+            // Evaluamos usando el campo real de tu modelo Order
+            // Recordá cambiar "aprobado" si usás otro string (ej: "completado", "paid")
+            paymentStatus: "aprobado"
+          }
+        }
+      })
+    }
+
+    // 💡 3. RETORNAMOS EL USUARIO Y EL CONTADOR AL CHECKOUT
+    return NextResponse.json({ 
+      user, 
+      ticketsBought 
+    })
+
   } catch (error) {
     console.error('Auth me error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

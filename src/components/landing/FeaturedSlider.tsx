@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
+import { displayLocalDate } from "@/utils/date";
 
+// 1. Corregimos la interfaz para que coincida con las propiedades de Prisma (camelCase)
 interface Event {
   id: string;
   title: string;
-  date_time?: string;
-  location_name: string;
-  banner_url?: string;
+  dateTime: string; // Cambiado de date_time
+  locationName: string;    // Cambiado de location_name
+  bannerUrl?: string | null; // Cambiado de banner_url
 }
 
 interface FeaturedSliderProps {
@@ -32,10 +34,13 @@ export default function FeaturedSlider({ events }: FeaturedSliderProps) {
     return () => clearInterval(timer);
   }, [events.length]);
 
-  if (!events.length) return null;
+  if (!events || events.length === 0) return null;
 
   const event = events[current];
-  const eventDate = event.date_time ? new Date(event.date_time) : null;
+
+  // USAMOS TU FUNCIÓN ACÁ:
+  // Esta función ya procesa el string de la BD esquivando el desfasaje de 3 horas
+  const eventDate = event.dateTime ? displayLocalDate(String(event.dateTime)) : null;
 
   return (
     <div className="relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-800/50">
@@ -43,7 +48,8 @@ export default function FeaturedSlider({ events }: FeaturedSliderProps) {
         <AnimatePresence mode="wait">
           <motion.img
             key={current}
-            src={event.banner_url || "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1200&q=80"}
+            // 3. Apuntamos a event.bannerUrl
+            src={event.bannerUrl || "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1200&q=80"}
             alt={event.title}
             className="w-full h-full object-cover"
             initial={{ opacity: 0, scale: 1.05 }}
@@ -71,9 +77,10 @@ export default function FeaturedSlider({ events }: FeaturedSliderProps) {
                   {format(eventDate, "d 'de' MMMM, HH:mm", { locale: es })} hs
                 </span>
               )}
+              {/* 4. Apuntamos a event.locationName */}
               <span className="flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-violet-400" />
-                {event.location_name}
+                {event.locationName}
               </span>
             </div>
             <Link href={createPageUrl(`EventDetail?id=${event.id}`)}>

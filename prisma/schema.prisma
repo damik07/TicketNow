@@ -81,6 +81,11 @@ model Event {
   packId          String?      @map("pack_id")
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  queueActive     Boolean      @default(false) @map("queue_active")     // Enciende/Apaga la sala manualmente
+  maxConcurrent   Int          @default(50)    @map("max_concurrent")   // Límite de usuarios simultáneos en Checkout
+  maxTicketsPerUser Int        @default(4) @map("max_tickets_per_user")
+
   organizer       Organizer    @relation(fields: [organizerId], references: [id], onDelete: Cascade)
   pack            EventPack?   @relation(fields: [packId], references: [id])
   orders          Order[]
@@ -228,13 +233,19 @@ model QueueEntry {
   userId       String    @map("user_id")
   sessionToken String    @unique @map("session_token")
   position     Int
-  status       String    @default("waiting")
+  status       String    @default("waiting") // "waiting" | "admitted" | "expired"
   admittedAt   DateTime? @map("admitted_at")
   expiresAt    DateTime? @map("expires_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relaciones correctas con ambas tablas
   event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Índices para optimizar el polleo constante de la Sala de Espera
+  @@index([eventId, status])
+  @@map("queue_entries")
 }
 
 model ContactMessage {

@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import TicketSelector from "@/components/events/TicketSelector";
-import { Calendar, MapPin, Clock, ArrowLeft, Share2, Heart, Loader2, Users } from "lucide-react";
+import { Calendar, MapPin, ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion } from "framer-motion";
@@ -26,6 +26,7 @@ interface Event {
   featured: boolean;
   total_capacity?: number;
   min_price?: number;
+  max_tickets_per_user?: number; // 💡 AGREGADO EN LA INTERFAZ
 }
 
 interface TicketType {
@@ -40,8 +41,6 @@ interface TicketType {
   sort_order: number;
 }
 
-const QUEUE_THRESHOLD = 3; // Usuarios en fila activa para activar sala de espera
-
 const CATEGORY_LABELS = {
   musica: "Música", deportes: "Deportes", teatro: "Teatro", conferencia: "Conferencia",
   festival: "Festival", fiesta: "Fiesta", gastronomia: "Gastronomía", otro: "Otro"
@@ -50,7 +49,7 @@ const CATEGORY_LABELS = {
 export default function EventDetail() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  
+
   const eventId = searchParams.get("id");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [checkingQueue, setCheckingQueue] = useState(false);
@@ -58,33 +57,103 @@ export default function EventDetail() {
   const [event, setEvent] = useState<Event | null>(null);
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
 
+  const [alreadyBought, setAlreadyBought] = useState<number>(0);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  // Carga inicial de Evento y Tickets
   useEffect(() => {
     const loadData = async () => {
       try {
         if (!eventId) return;
 
-        // Fetch event and ticket types from API
         const [eventResponse, ticketTypesResponse] = await Promise.all([
           fetch(`/api/events?eventId=${eventId}`),
-          fetch(`/api/tickets?eventId=${eventId}`)
+          fetch(`/api/tickets/types?eventId=${eventId}`)
         ]);
 
         const eventData = await eventResponse.json();
         const ticketTypesData = await ticketTypesResponse.json();
 
-        setEvent(eventData[0] || null);
-        setTicketTypes(ticketTypesData);
-        setLoading(false);
+        const finalEvent = Array.isArray(eventData) ? eventData[0] : eventData;
+        setEvent(finalEvent || null);
+
+        if (Array.isArray(ticketTypesData)) {
+          const mappedTickets = ticketTypesData.map((tt: any) => ({
+            id: tt.id,
+            event_id: tt.eventId || tt.event_id,
+            name: tt.name,
+            description: tt.description,
+            price: tt.price,
+            stock_total: tt.stockTotal || tt.stock_total,
+            stock_available: tt.stockAvailable !== undefined ? tt.stockAvailable : tt.stock_available,
+
+            max_per_user: tt.max_tickets_per_user !== undefined
+              ? Number(tt.max_tickets_per_user)
+              : (tt.maxPerUser || tt.max_per_user || 4),
+
+            sort_order: tt.sortOrder || tt.sort_order || 0,
+          }));
+          setTicketTypes(mappedTickets);
+        } else {
+          setTicketTypes([]);
+        }
       } catch (error) {
         console.error('Failed to load event data:', error);
+      } finally {
         setLoading(false);
       }
     };
-    
+
     loadData();
   }, [eventId]);
 
+  // Consulta cuántas entradas ya compró este usuario para este evento
+  useEffect(() => {
+    const checkUserLimits = async () => {
+      if (!eventId) return;
+      try {
+        const res = await fetch(`/api/auth/me?eventId=${eventId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setIsAuthenticated(true);
+          setAlreadyBought(data.ticketsBought || 0);
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch (err) {
+        console.error("Error al verificar compras previas del usuario:", err);
+      }
+    };
+
+    checkUserLimits();
+  }, [eventId]);
+
   const totalQty = Object.values(quantities).reduce((a, b) => a + b, 0);
+
+  // Límite absoluto global del modelo Event
+  const maxEventLimit = event?.max_tickets_per_user !== undefined
+    ? Number(event.max_tickets_per_user)
+    : 4;
+
+  // Remanente real del evento unificado
+  const remainingEventLimit = Math.max(0, maxEventLimit - alreadyBought);
+
+  console.log("DEBUG LÍMITES -> Límite Global Evento:", maxEventLimit, "Remanente para comprar:", remainingEventLimit, "Ya comprados en historial:", alreadyBought);
+
+  // Interceptamos y modificamos la función setQuantities para usar remainingEventLimit corregido
+  const handleSetQuantitiesSafe = (newQuantities: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => {
+    setQuantities((prev) => {
+      const updated = typeof newQuantities === 'function' ? newQuantities(prev) : newQuantities;
+      const proposedTotal = Object.values(updated).reduce((a, b) => a + b, 0);
+
+      if (proposedTotal > remainingEventLimit) { // 💡 CORREGIDO AQUÍ
+        alert(`Límite excedido: Ya compraste ${alreadyBought} entrada(s). Solo podés seleccionar hasta ${remainingEventLimit} más.`);
+        return prev;
+      }
+      return updated;
+    });
+  };
+
   const totalPrice = ticketTypes.reduce((sum, tt) => {
     return sum + (quantities[tt.id] || 0) * (tt.price || 0);
   }, 0);
@@ -107,19 +176,6 @@ export default function EventDetail() {
 
   const eventDate = event.date_time ? new Date(event.date_time) : null;
 
-  const buildCheckoutUrl = () => {
-    const items = ticketTypes
-      .filter((tt) => (quantities[tt.id] || 0) > 0)
-      .map((tt) => ({
-        ticket_type_id: tt.id,
-        ticket_type_name: tt.name,
-        quantity: quantities[tt.id],
-        unit_price: tt.price,
-        subtotal: quantities[tt.id] * tt.price,
-      }));
-    return `/Checkout?event_id=${eventId}&items=${encodeURIComponent(JSON.stringify(items))}&total=${totalPrice}`;
-  };
-
   const handleBuyClick = async () => {
     if (totalQty === 0) {
       alert("Por favor, selecciona al menos una entrada");
@@ -127,30 +183,63 @@ export default function EventDetail() {
     }
 
     setCheckingQueue(true);
-    
+
     try {
-      // TODO: Implement Next.js API call for queue checking
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Simulate queue check
-      const waitingInQueue = Math.random() > 0.7; // 30% chance of queue
-      
-      const checkoutUrl = buildCheckoutUrl();
+      const res = await fetch("/api/queue/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId })
+      });
 
-      if (waitingInQueue) {
-        // Hay alta demanda → redirigir a sala de espera
-        router.push(`/SalaEspera?event_id=${eventId}&checkout_url=${encodeURIComponent(checkoutUrl)}`);
-      } else {
-        router.push(checkoutUrl);
+      const data = await res.json();
+
+      if (!res.ok && data.action !== "rejected_limit_reached") {
+        alert(data.error || "No se pudo iniciar la compra. ¿Estás logueado?");
+        setCheckingQueue(false);
+        return;
       }
-    } catch (error) {
-      setCheckingQueue(false);
-      alert("Error al procesar la compra");
-    }
-  };
 
-  const navigateToPage = (page: string) => {
-    router.push(`/${page}`);
+      if (!res.ok && data.action === "rejected_limit_reached") {
+        alert(data.error);
+        setCheckingQueue(false);
+        return;
+      }
+
+      const items = ticketTypes
+        .filter((tt) => (quantities[tt.id] || 0) > 0)
+        .map((tt) => ({
+          ticket_type_id: tt.id,
+          ticket_type_name: tt.name,
+          quantity: quantities[tt.id],
+          unit_price: tt.price,
+          subtotal: quantities[tt.id] * tt.price,
+        }));
+
+      if (typeof window !== "undefined" && window.sessionStorage) {
+        window.sessionStorage.setItem(`checkout_items_${eventId}`, JSON.stringify(items));
+        window.sessionStorage.setItem(`checkout_total_${eventId}`, totalPrice.toString());
+      }
+
+      const checkoutUrl = `/Checkout?event_id=${eventId}`;
+
+      if (data.action === "allow_checkout") {
+        if (typeof window !== "undefined" && window.sessionStorage) {
+          window.sessionStorage.setItem(`queue_token_${eventId}`, data.sessionToken);
+        }
+        router.push(checkoutUrl);
+      } else if (data.action === "redirect_to_queue") {
+        if (typeof window !== "undefined" && window.sessionStorage && data.sessionToken) {
+          window.sessionStorage.setItem(`queue_token_${eventId}`, data.sessionToken);
+        }
+        router.push(`/SalaEspera?event_id=${eventId}&checkout_url=${encodeURIComponent(checkoutUrl)}`);
+      }
+
+    } catch (error) {
+      console.error("Error al procesar la compra:", error);
+      alert("Error al procesar la compra. Inténtalo de nuevo.");
+    } finally {
+      setCheckingQueue(false);
+    }
   };
 
   return (
@@ -164,10 +253,10 @@ export default function EventDetail() {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
         <div className="absolute top-6 left-6">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={() => navigateToPage("")}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push("/")}
             className="bg-black/30 backdrop-blur-sm border border-white/10 text-white hover:bg-black/50 rounded-xl"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -216,23 +305,12 @@ export default function EventDetail() {
                 </div>
               </div>
 
-              {/* Description */}
               <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6 mb-8">
                 <h3 className="text-lg font-semibold text-white mb-3">Descripción</h3>
                 <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-line">
                   {event.description || "Sin descripción disponible."}
                 </p>
               </div>
-
-              {/* Map placeholder */}
-              {event.location_lat && event.location_lng && (
-                <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-3">Ubicación</h3>
-                  <div className="rounded-xl overflow-hidden h-64 bg-slate-800 flex items-center justify-center">
-                    <MapPin className="w-8 h-8 text-slate-600" />
-                  </div>
-                </div>
-              )}
             </motion.div>
           </div>
 
@@ -247,10 +325,30 @@ export default function EventDetail() {
               <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-6">
                 <h3 className="text-lg font-semibold text-white mb-5">Entradas</h3>
 
+                {/* 💡 AVISO UX CORREGIDO CON REMANENTE UNIFICADO */}
+                {isAuthenticated && alreadyBought > 0 && (
+                  <div className={`p-3 rounded-xl mb-4 text-xs border flex items-start gap-2 ${remainingEventLimit === 0
+                    ? "bg-red-500/10 text-red-400 border-red-500/20"
+                    : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                    }`}>
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">Historial del Evento</p>
+                      <p className="mt-0.5">
+                        Ya registramos <strong>{alreadyBought}</strong> entrada(s) aprobada(s) a tu nombre.
+                        {remainingEventLimit === 0
+                          ? " Alcanzaste el límite máximo permitido."
+                          : ` Podés adquirir hasta ${remainingEventLimit} más.`}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <TicketSelector
                   ticketTypes={ticketTypes}
                   quantities={quantities}
-                  setQuantities={setQuantities}
+                  setQuantities={handleSetQuantitiesSafe}
+                  maxAllowedItems={remainingEventLimit} // 💡 ENLAZADO PERFECTAMENTE
                 />
 
                 {totalQty > 0 && (
@@ -263,11 +361,13 @@ export default function EventDetail() {
                     </div>
                     <Button
                       onClick={handleBuyClick}
-                      disabled={checkingQueue}
-                      className="w-full h-12 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 border-0 shadow-lg shadow-violet-500/25 text-base font-medium"
+                      disabled={checkingQueue || remainingEventLimit === 0} // 💡 CORREGIDO AQUÍ
+                      className="w-full h-12 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 border-0 shadow-lg shadow-violet-500/25 text-base font-medium disabled:opacity-50"
                     >
                       {checkingQueue ? (
                         <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : remainingEventLimit === 0 ? ( // 💡 CORREGIDO AQUÍ
+                        "Límite Máximo Alcanzado"
                       ) : (
                         "Comprar Entradas"
                       )}

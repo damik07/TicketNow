@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import {
   Zap, BarChart2, Users, Ticket
 } from "lucide-react";
 import { toast } from "sonner";
-import { signIn } from 'next-auth/react';
+import { signIn, signOut } from 'next-auth/react';
 
 const BENEFITS = [
   { icon: Ticket, title: "Venta ágiles", desc: "Creá eventos y vendé entradas sin demoras." },
@@ -71,6 +71,52 @@ export default function SerOrganizador() {
   const [showContract, setShowContract] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const isLoadingRef = useRef(false);
+  const router = useRouter();
+
+  const load = useCallback(async () => {
+    // Evitar llamadas múltiples simultáneas
+    if (isLoadingRef.current) {
+      return;
+    }
+    
+    isLoadingRef.current = true;
+    
+    try {
+      // Get current session
+      const response = await fetch('/api/auth/me');
+      const data = await response.json();
+      
+      if (data.error) {
+        isLoadingRef.current = false;
+        router.push('/Login');
+        return;
+      }
+
+      setUser(data.user);
+
+      // Check if user has organizer account
+      const organizerResponse = await fetch(`/api/organizers?userId=${data.user.id}`);
+      const organizersData = await organizerResponse.json();
+      
+      if (organizersData.error || !organizersData.length) {
+        setIsOrganizer(false);
+      } else {
+        setIsOrganizer(true);
+      }
+      
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to load user data:', error);
+      setLoading(false);
+    } finally {
+      isLoadingRef.current = false;
+    }
+  }, [router]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleContractChange = (checked: boolean | "indeterminate") => {
     setAcceptedContract(checked === true);
@@ -141,41 +187,6 @@ export default function SerOrganizador() {
     const formatted = formatPhone(e.target.value);
     setPhone(formatted);
   };
-  const router = useRouter();
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        // Get current session
-        const response = await fetch('/api/auth/me');
-        const data = await response.json();
-        
-        if (data.error) {
-          router.push('/Login');
-          return;
-        }
-
-        setUser(data.user);
-
-        // Check if user has organizer account
-        const organizerResponse = await fetch(`/api/organizers?userId=${data.user.id}`);
-        const organizersData = await organizerResponse.json();
-        
-        if (organizersData.error || !organizersData.length) {
-          setIsOrganizer(false);
-        } else {
-          setIsOrganizer(true);
-        }
-        
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to load user data:', error);
-        setLoading(false);
-      }
-    };
-    
-    load();
-  }, [router]);
 
   const handleSubmit = async () => {
     if (!acceptedContract) {
