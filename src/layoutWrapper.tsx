@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { createPageUrl } from "@/utils";
 
 import { Button } from "@/components/ui/button";
@@ -38,11 +39,8 @@ const LANDING_LABELS = {
   Contacto: "Contacto"
 };
 
-export default function LayoutWrapper({ children, currentPageName }: {
-  children: React.ReactNode;
-  currentPageName?: string;
-}) {
-  // Desestructuramos correctamente lo que el hook ahora sí devuelve
+export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname(); // 👈 2. Obtenés la ruta actual (ej: "/MisEntradas")
   const { user, isAuthenticated, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -53,8 +51,11 @@ export default function LayoutWrapper({ children, currentPageName }: {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const isProducer =
-    user?.role === "ORGANIZER" || user?.role === "ADMIN";
+  // 👈 3. Mapeás el pathname actual con tus PUBLIC_PAGES
+  // Si estás en "/MisEntradas", tu variable "currentPageName" pasará a ser "MisEntradas"
+  const currentPageName = pathname.replace(/^\//, "") || "Home";
+
+  const isProducer = user?.role === "ORGANIZER" || user?.role === "ADMIN";
   const isAdmin = user?.role === "ADMIN";
   const isPlainUser = user?.role === "USER";
 

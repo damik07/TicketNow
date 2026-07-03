@@ -38,68 +38,69 @@ export default function MisCuentas() {
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Get current session
-        const response = await fetch('/api/auth/me');
-        const data = await response.json();
-        
-        if (data.error) {
-          router.push('/Login');
-          return;
-        }
+  const loadData = async () => {
+    try {
+      const response = await fetch('/api/auth/me');
+      const data = await response.json();
 
-        setUser(data.user);
-
-        // Get user's bank accounts
-        const accountsResponse = await fetch(`/api/bank-accounts?userId=${data.user.id}`);
-        const accountsData = await accountsResponse.json();
-
-        setAccounts(accountsData || []);
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to load bank accounts:', error);
-        setLoading(false);
+      if (data.error || !data.user) {
+        router.push('/Login');
+        return;
       }
-    };
-    
+
+      setUser(data.user);
+
+      const accountsResponse = await fetch(`/api/bank-accounts?userId=${data.user.id}`);
+      const accountsData = await accountsResponse.json();
+
+      setAccounts(accountsData || []);
+    } catch (error) {
+      console.error('Failed to load bank accounts:', error);
+      toast.error("Error al cargar las cuentas");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, [router]);
 
   const handleSave = async () => {
-    if (!form.cbu.trim() || !form.account_holder.trim()) {
+    if (!form.cbu.trim() || !form.account_holder.trim() || !form.bank_name.trim()) {
       toast.error("Por favor, completa los campos requeridos");
       return;
     }
 
+    if (form.cbu.length !== 22) {
+      toast.error("El CBU/CVU debe tener exactamente 22 dígitos");
+      return;
+    }
+
     setSaving(true);
-    
+
     try {
-      // TODO: Implement Next.js API call for bank account creation
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // If setting as default, unset others first
-      if (form.is_default) {
-        const updatedAccounts = accounts.map(a => ({ ...a, is_default: false }));
-        setAccounts(updatedAccounts);
+      const response = await fetch('/api/bank-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+
+      const data = await response.json();
+
+      // 🔄 REEMPLAZÁ TU VALIDACIÓN POR ESTA CAPTURA ROBUSTA:
+      if (!response.ok) {
+        throw new Error(data.error || "Ocurrió un error al validar la cuenta.");
       }
-      
-      // Create new account
-      const newAccount: BankAccount = {
-        id: Date.now().toString(),
-        ...form,
-        user_id: user!.id
-      };
-      
-      setAccounts(prev => [...prev, newAccount]);
-      toast.success("Cuenta agregada correctamente");
-      setSaving(false);
+
+      toast.success("Cuenta verificada y agregada correctamente");
       setDialogOpen(false);
       setForm(defaultForm);
-    } catch (error) {
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Error al agregar cuenta");
+    } finally {
       setSaving(false);
-      toast.error("Error al agregar cuenta");
     }
   };
 
@@ -109,9 +110,13 @@ export default function MisCuentas() {
     }
 
     try {
-      // TODO: Implement Next.js API call for bank account deletion
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      const response = await fetch(`/api/bank-accounts?id=${account.id}`, {
+        method: 'DELETE'
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
       setAccounts(prev => prev.filter(a => a.id !== account.id));
       toast.success("Cuenta eliminada");
     } catch (error) {
@@ -121,15 +126,18 @@ export default function MisCuentas() {
 
   const handleSetDefault = async (account: BankAccount) => {
     try {
-      // TODO: Implement Next.js API call for updating default account
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Update all accounts
+      const response = await fetch(`/api/bank-accounts?id=${account.id}`, {
+        method: 'PUT'
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
       const updatedAccounts = accounts.map(a => ({
         ...a,
         is_default: a.id === account.id
       }));
-      
+
       setAccounts(updatedAccounts);
       toast.success("Cuenta predeterminada actualizada");
     } catch (error) {
@@ -158,7 +166,6 @@ export default function MisCuentas() {
           </Button>
         </div>
 
-        {/* Info banner */}
         <div className="bg-violet-500/5 border border-violet-500/20 rounded-2xl p-4 flex items-start gap-3 mb-6">
           <ShieldCheck className="w-5 h-5 text-violet-400 mt-0.5 shrink-0" />
           <p className="text-sm text-slate-400 leading-relaxed">
@@ -227,7 +234,6 @@ export default function MisCuentas() {
         )}
       </div>
 
-      {/* Add Account Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-slate-900 border-slate-800 max-w-md">
           <DialogHeader>
@@ -238,7 +244,8 @@ export default function MisCuentas() {
               <Label className="text-slate-400 text-xs mb-1.5 block">CBU / CVU *</Label>
               <Input
                 value={form.cbu}
-                onChange={(e) => setForm({ ...form, cbu: e.target.value })}
+                maxLength={22}
+                onChange={(e) => setForm({ ...form, cbu: e.target.value.replace(/\D/g, '') })}
                 placeholder="22 dígitos del CBU o CVU"
                 className="bg-slate-800/50 border-slate-700 text-white font-mono"
               />
@@ -248,16 +255,16 @@ export default function MisCuentas() {
               <Input
                 value={form.alias}
                 onChange={(e) => setForm({ ...form, alias: e.target.value })}
-                placeholder="mi.alias.mercadopago"
+                placeholder="mi.alias.bancario"
                 className="bg-slate-800/50 border-slate-700 text-white"
               />
             </div>
             <div>
-              <Label className="text-slate-400 text-xs mb-1.5 block">Banco / Billetera</Label>
+              <Label className="text-slate-400 text-xs mb-1.5 block">Banco / Billetera *</Label>
               <Input
                 value={form.bank_name}
                 onChange={(e) => setForm({ ...form, bank_name: e.target.value })}
-                placeholder="Ej: Mercado Pago, Banco Nación..."
+                placeholder="Ej: Mercado Pago, Banco Galicia..."
                 className="bg-slate-800/50 border-slate-700 text-white"
               />
             </div>
@@ -279,7 +286,7 @@ export default function MisCuentas() {
             </div>
             <Button
               onClick={handleSave}
-              disabled={saving || !form.cbu || !form.account_holder}
+              disabled={saving || !form.cbu || !form.account_holder || !form.bank_name}
               className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 border-0"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Guardar cuenta"}

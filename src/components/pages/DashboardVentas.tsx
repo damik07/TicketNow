@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Loader2, RefreshCw, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -9,18 +9,15 @@ import { useAuth } from "@/hooks/useAuth";
 import StatsGrid from "@/components/dashboard/StatsGrid";
 import SalesChart from "@/components/dashboard/SalesChart";
 import EventsTable from "@/components/dashboard/EventsTable";
-
-interface User {
-  id: string;
-  full_name: string;
-  role: string;
-}
+import MpConnectBanner from "@/components/dashboard/MpConnectBanner";
+import DateFilter from "@/components/dashboard/DateFilter"; // 👈 SOLUCIÓN 1: Importación agregada correctamente
 
 interface Organizer {
   id: string;
   user_id: string;
   business_name: string;
   verified: boolean;
+  mercadopago_user_id?: string | null;
 }
 
 interface Event {
@@ -54,14 +51,6 @@ interface Ticket {
   ticket_type_id: string;
   event_id: string;
   user_id: string;
-  event_title: string;
-  event_date: string;
-  event_location: string;
-  ticket_type_name: string;
-  qr_code: string;
-  usage_status: string;
-  holder_name: string;
-  holder_email: string;
 }
 
 export default function DashboardVentas() {
@@ -74,19 +63,28 @@ export default function DashboardVentas() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isLoadingRef = useRef(false);
-
-  // Variable de control de latencia/frecuencia (en segundos). Por defecto 5 minutos en pruebas.
   const [refreshInterval, setRefreshInterval] = useState<number>(300);
 
-  // loadData optimizado recibiendo parámetros directos
+  const [endDate, setEndDate] = useState<string>(() => {
+    const hoy = new Date();
+    return hoy.toISOString().split('T')[0];
+  });
+
+  // Inicializamos startDate con la fecha de hace 7 días
+  const [startDate, setStartDate] = useState<string>(() => {
+    const haceSieteDias = new Date();
+    haceSieteDias.setDate(haceSieteDias.getDate() - 7);
+    return haceSieteDias.toISOString().split('T')[0];
+  });
+
+
+
   const loadData = useCallback(async (currentOrganizer: Organizer) => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
     setIsRefreshing(true);
 
     try {
-      // OPTIMIZACIÓN CLAVE: Pasamos el organizerId por Query Params a las APIs
-      // Tu backend debe aceptar ?organizerId=... para filtrar en la base de datos
       const [eventsResponse, ordersResponse, ticketsResponse] = await Promise.all([
         fetch(`/api/events?organizerId=${currentOrganizer.id}`),
         fetch(`/api/orders?organizerId=${currentOrganizer.id}`),
@@ -97,6 +95,7 @@ export default function DashboardVentas() {
       const ordersData = await ordersResponse.json();
       const ticketsData = await ticketsResponse.json();
 
+      // 1. Normalizar Eventos
       const normalizedEvents = eventsData.map((e: any) => ({
         id: e.id,
         title: e.title,
@@ -108,10 +107,49 @@ export default function DashboardVentas() {
         min_price: e.minPrice || e.min_price,
       }));
 
-      // Guardamos los datos normalizados
+      // 2. Normalizar Órdenes
+      const normalizedOrders = ordersData.map((o: any) => {
+        let ticketOnlyTotal = 0;
+        const rawItems = o.orderItems || o.order_items || o.items;
+
+        if (rawItems && Array.isArray(rawItems)) {
+          rawItems.forEach((item: any) => {
+            const ticketTypeObj = item.ticketType || item.ticket_type;
+            const basePrice = ticketTypeObj?.price ?? item.unitPrice ?? 0;
+            const quantity = item.quantity ?? 0;
+            ticketOnlyTotal += basePrice * quantity;
+          });
+        }
+
+        return {
+          id: o.id,
+          event_id: o.eventId || o.event_id,
+          user_id: o.userId || o.user_id,
+          user_email: o.userEmail || o.user_email,
+          user_name: o.userName || o.user_name,
+          event_title: o.eventTitle || o.event_title,
+          items: rawItems || [],
+          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : (o.totalAmount || o.total_amount || 0),
+          payment_status: o.paymentStatus || o.payment_status,
+          payment_method: o.paymentMethod || o.payment_method,
+          created_date: o.createdAt || o.created_date,
+        };
+      });
+
+      // 3. Normalizar Tickets
+      const normalizedTickets = ticketsData.map((t: any) => ({
+        id: t.id,
+        order_id: t.orderId || t.order_id,
+        ticket_type_id: t.ticketTypeId || t.ticket_type_id,
+        event_id: t.eventId || t.event_id,
+        user_id: t.userId || t.user_id,
+        created_date: t.createdAt || t.created_date || null
+      }));
+
       setEvents(normalizedEvents);
-      setAllOrders(ordersData);
-      setAllTickets(ticketsData);
+      setAllOrders(normalizedOrders);
+      setAllTickets(normalizedTickets);
+
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast.error("Error al refrescar los datos");
@@ -122,7 +160,66 @@ export default function DashboardVentas() {
     }
   }, []);
 
-// 1. Efecto Orquestador de Autenticación y primer fetch de Organizador
+  // 🛡️ SOLUCIÓN 2: Filtro useMemo optimizado y seguro para evitar problemas de tipos
+  const filteredData = useMemo(() => {
+    let orders = [...allOrders];
+    let tickets = [...allTickets];
+
+    if (startDate) {
+      // Forzamos el inicio del día en formato local
+      const start = new Date(`${startDate}T00:00:00`);
+      orders = orders.filter((o) => {
+        if (!o.created_date) return false;
+        return new Date(o.created_date) >= start;
+      });
+
+      tickets = tickets.filter((t) => {
+        const parentOrder = orders.find(o => o.id === t.order_id);
+        const ticketDate = parentOrder ? new Date(parentOrder.created_date) : null;
+        return ticketDate ? ticketDate >= start : true;
+      });
+    }
+
+    if (endDate) {
+      // Forzamos el último segundo del día para incluir las ventas de hoy
+      const end = new Date(`${endDate}T23:59:59`);
+      orders = orders.filter((o) => {
+        if (!o.created_date) return false;
+        return new Date(o.created_date) <= end;
+      });
+
+      tickets = tickets.filter((t) => {
+        const parentOrder = orders.find(o => o.id === t.order_id);
+        const ticketDate = parentOrder ? new Date(parentOrder.created_date) : null;
+        return ticketDate ? ticketDate <= end : true;
+      });
+    }
+
+    return { orders, tickets };
+  }, [allOrders, allTickets, startDate, endDate]);
+
+  const handleClearFilters = () => {
+    const hoy = new Date();
+    const haceSieteDias = new Date();
+    haceSieteDias.setDate(haceSieteDias.getDate() - 7);
+
+    setEndDate(hoy.toISOString().split('T')[0]);
+    setStartDate(haceSieteDias.toISOString().split('T')[0]);
+  };
+
+  const refreshOrganizerData = useCallback(async () => {
+    if (!user) return;
+    try {
+      const organizerResponse = await fetch(`/api/organizers?userId=${user.id}`);
+      const organizersData = await organizerResponse.json();
+      if (organizersData.length > 0) {
+        setOrganizer(organizersData[0]);
+      }
+    } catch (e) {
+      console.error("Error recargando datos del organizador", e);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (isLoadingAuth) return;
 
@@ -142,7 +239,7 @@ export default function DashboardVentas() {
       try {
         const organizerResponse = await fetch(`/api/organizers?userId=${user.id}`);
         const organizersData = await organizerResponse.json();
-        
+
         if (organizersData.error || !organizersData.length) {
           toast.error("No se encontró tu cuenta de organizador");
           router.push('/SerOrganizador');
@@ -151,7 +248,6 @@ export default function DashboardVentas() {
 
         const org = organizersData[0];
         setOrganizer(org);
-        // Disparamos la carga inicial de métricas inmediatamente
         loadData(org);
       } catch (e) {
         console.error(e);
@@ -164,23 +260,28 @@ export default function DashboardVentas() {
     }
   }, [isLoadingAuth, isAuthenticated, user, organizer, loadData, router]);
 
-  // 2. Efecto de Polling Dinámico controlado por la variable refreshInterval
   useEffect(() => {
-    // Si no hay organizador o el intervalo se define en 0 (desactivado), no hacemos polling
     if (!organizer || refreshInterval <= 0) return;
 
     const intervalId = setInterval(() => {
       loadData(organizer);
-    }, refreshInterval * 1000); // Convertimos segundos a milisegundos
+    }, refreshInterval * 1000);
 
-    return () => clearInterval(intervalId); // Limpieza crucial al desmontar o cambiar intervalo
+    return () => clearInterval(intervalId);
   }, [organizer, refreshInterval, loadData]);
+
+  if (loading || isLoadingAuth) {
+    return (
+      <div className="flex justify-center py-20 min-h-screen bg-slate-950 items-center">
+        <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 py-24">
       <div className="max-w-7xl mx-auto px-4">
-        
-        {/* PANEL DE CONTROL EXCLUSIVO PARA ADMIN */}
+
         {user?.role === 'ADMIN' && (
           <div className="mb-6 p-4 bg-slate-900 border border-violet-500/30 rounded-xl flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-violet-400">
@@ -197,9 +298,6 @@ export default function DashboardVentas() {
                 onChange={(e) => setRefreshInterval(Math.max(0, parseInt(e.target.value) || 0))}
                 className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 text-white rounded text-center text-sm focus:outline-none focus:border-violet-500"
               />
-              <span className="text-xs text-slate-500">
-                {refreshInterval === 0 ? "(Refresco automático desactivado)" : `(Cada ${refreshInterval}s)`}
-              </span>
             </div>
           </div>
         )}
@@ -210,8 +308,8 @@ export default function DashboardVentas() {
             <p className="text-slate-500 mt-1">Reportes en tiempo real de tus eventos</p>
           </div>
           {organizer && (
-            <button 
-              onClick={() => loadData(organizer)} 
+            <button
+              onClick={() => loadData(organizer)}
               disabled={isRefreshing}
               className="p-2 bg-slate-900 hover:bg-slate-800 rounded-lg border border-slate-800 text-slate-400 hover:text-white transition-colors"
             >
@@ -220,22 +318,49 @@ export default function DashboardVentas() {
           )}
         </div>
 
-        {loading || isLoadingAuth ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+        <div className="space-y-6">
+          {organizer && (
+            <MpConnectBanner
+              organizerId={organizer.id}
+              mercadopagoUserId={organizer.mercadopago_user_id}
+              onRefreshOrganizer={refreshOrganizerData}
+            />
+          )}
+
+          <DateFilter
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={setStartDate}
+            onEndDateChange={setEndDate}
+            onClearFilters={handleClearFilters}
+          />
+
+          <StatsGrid
+            events={events}
+            orders={filteredData.orders}
+            tickets={filteredData.tickets}
+          />
+
+          {/* 📊 FILA 1: Gráfico ocupando todo el ancho */}
+          <div className="w-full">
+            <SalesChart
+              orders={filteredData.orders}
+              startDate={startDate}
+              endDate={endDate}
+            />
           </div>
-        ) : (
-          <div className="space-y-6">
-            <StatsGrid events={events} orders={allOrders} tickets={allTickets} />
-            <SalesChart orders={allOrders} />
-            <EventsTable 
-              events={events} 
-              orders={allOrders} 
+
+          {/* 📋 FILA 2: Tabla de eventos ocupando todo el ancho debajo del gráfico */}
+          <div className="w-full">
+            <EventsTable
+              events={events}
+              orders={allOrders}
               onEventUpdate={() => organizer && loadData(organizer)}
               onEventDelete={() => organizer && loadData(organizer)}
             />
           </div>
-        )}
+
+        </div>
       </div>
     </div>
   );

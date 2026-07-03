@@ -226,6 +226,7 @@ export default function Checkout() {
         ? window.sessionStorage.getItem(`queue_token_${eventId}`)
         : null;
 
+      // 1. Creamos la orden en la base de datos (queda inicialmente en estado pendiente)
       const orderResponse = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -243,25 +244,42 @@ export default function Checkout() {
         throw new Error(payload.error || 'Error al crear la orden');
       }
 
+      // 🔑 MODIFICACIÓN: Lógica cuando el entorno es SIMULADO
       if (isSimulated) {
+        // Ejecutamos el llamado a nuestra nueva API para procesar los tickets y disparar el mail
+        const simulateResponse = await fetch('/api/checkout/simulate-success', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: payload.id }), // Pasamos el id de la orden generada recién
+        });
+
+        const simulatePayload = await simulateResponse.json();
+
+        if (!simulateResponse.ok || simulatePayload.error) {
+          throw new Error(simulatePayload.error || 'Error al procesar la simulación de pago');
+        }
+
+        // Limpieza de almacenamiento temporal una vez confirmado todo con el backend
         if (typeof window !== 'undefined' && eventId) {
           window.sessionStorage.removeItem(`queue_token_${eventId}`);
           window.sessionStorage.removeItem(`checkout_items_${eventId}`);
           window.sessionStorage.removeItem(`checkout_total_${eventId}`);
         }
+        
         setProcessing(false);
         setSuccess(true);
-        toast.success("¡Compra simulada con éxito!");
+        toast.success("¡Compra simulada con éxito y entradas enviadas por mail!");
       } else {
+        // Lógica de producción/sandbox real con pasarela Mercado Pago
         if (payload.initPoint) {
           window.location.href = payload.initPoint;
         } else {
           throw new Error("No se pudo obtener la pasarela de Mercado Pago");
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       setProcessing(false);
-      toast.error("Error al procesar la compra");
+      toast.error(error.message || "Error al procesar la compra");
       console.error('Purchase error:', error);
     }
   };

@@ -183,81 +183,48 @@ export default function GestionStaff() {
     setShowCamera(false);
 
     try {
-      // API call para buscar ticket por QR
-      const response = await fetch(`/api/tickets/qr/${qrCode}`);
-      
+      // 🚀 CAMBIO CENTRAL: Todo va al endpoint único que creamos
+      const response = await fetch("/api/scanner/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          qrCode,
+          amountToDeduct: consumptionAmount ? parseFloat(consumptionAmount) : undefined
+        })
+      });
+
+      const result = await response.json();
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Ticket not found');
+        // Manejo de errores específicos que devuelve la API (Fraude, Saldo insuficiente, etc.)
+        throw new Error(result.error || "Error al procesar el código QR");
       }
 
-      const ticket: Ticket = await response.json();
+      // =========================================================================
+      // RESPUESTAS EXITOSAS DE LA API UNIFICADA
+      // =========================================================================
       
-      const isConsumption = ticket.ticketTypeName?.toLowerCase().includes("consumición") || 
-                           ticket.ticketTypeName?.toLowerCase().includes("consumicion");
-
-      if (isConsumption) {
-        // Handle consumption ticket
-        const amount = parseFloat(consumptionAmount);
-        if (!amount || amount <= 0) {
-          toast.error("Ingresá un monto válido para consumir");
-          setValidating(false);
-          return;
-        }
-        
-        const currentBalance = ticket.consumptionBalance ?? (ticket.consumptionInitial || 0);
-        
-        if (currentBalance >= amount) {
-          // API call para procesar consumo
-          const consumeResponse = await fetch(`/api/tickets/${ticket.id}/consume`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ amount })
-          });
-
-          if (!consumeResponse.ok) {
-            const error = await consumeResponse.json();
-            throw new Error(error.error || 'Failed to process consumption');
-          }
-
-          const result = await consumeResponse.json();
-          const newBalance = result.newBalance;
-          
-          toast.success(`✓ Consumo aplicado: $${amount.toLocaleString("es-AR")}. Saldo restante: $${newBalance.toLocaleString("es-AR")}`);
-        } else {
-          const deficit = amount - currentBalance;
-          toast.error(`Saldo insuficiente. Falta: $${deficit.toFixed(2)}`);
-        }
-        setConsumptionAmount("");
-      } else {
-        // Handle regular entry ticket
-        if (ticket.usageStatus === "ingresado") {
-          toast.error("Esta entrada ya fue utilizada");
-          setValidating(false);
-          setQrInput("");
-          return;
-        }
-        
-        // API call para validar entrada
-        const validateResponse = await fetch(`/api/tickets/${ticket.id}/validate`, {
-          method: 'POST'
-        });
-
-        if (!validateResponse.ok) {
-          const error = await validateResponse.json();
-          throw new Error(error.error || 'Failed to validate ticket');
-        }
-
-        toast.success(`✓ Entrada validada: ${ticket.eventTitle} - ${ticket.ticketTypeName}`);
+      if (result.type === "entry") {
+        // Flujo A: Entrada base validada con éxito en puerta
+        toast.success(`✓ Ingreso AUTORIZADO: Titular: ${result.holderName}`);
+      } 
+      
+      else if (result.type === "consumption_requested") {
+        // Flujo B: Es un ticket de consumo y entró en el estado intermedio
+        toast.info(
+          `⏳ Solicitud enviada al cliente ($${parseFloat(consumptionAmount).toLocaleString("es-AR")}). Esperando confirmación en su teléfono...`, 
+          { duration: 6000 }
+        );
+        setConsumptionAmount(""); // Limpiamos el input de la barra
       }
-      
-      setValidating(false);
+
       setQrInput("");
     } catch (error) {
-      setValidating(false);
       toast.error(error instanceof Error ? error.message : "Error al validar el código QR");
+    } finally {
+      setValidating(false);
     }
   };
 

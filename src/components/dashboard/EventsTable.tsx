@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { displayLocalDate } from "@/utils/date";
 
 interface Event {
   id: string;
@@ -111,7 +112,11 @@ export default function EventsTable({ events, orders, onEventUpdate, onEventDele
               <TableRow key={ev.id} className="border-slate-800/50 hover:bg-slate-800/20">
                 <TableCell className="font-medium text-white">{ev.title}</TableCell>
                 <TableCell className="text-slate-400 text-sm">
-                  {ev.date_time ? format(new Date(ev.date_time), "d MMM yyyy", { locale: es }) : "-"}
+                  {(() => {
+                    if (!ev.date_time) return "-";
+                    const localDate = displayLocalDate(ev.date_time);
+                    return localDate ? format(localDate, "d MMM yyyy", { locale: es }) : "-";
+                  })()}
                 </TableCell>
                 <TableCell>
                   <Badge className={`${STATUS_STYLES[ev.status] || STATUS_STYLES.borrador} border text-xs`}>
@@ -127,7 +132,7 @@ export default function EventsTable({ events, orders, onEventUpdate, onEventDele
                         <Eye className="w-4 h-4" />
                       </Button>
                     </Link>
-                    
+
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="text-slate-500 hover:text-white">
@@ -141,7 +146,7 @@ export default function EventsTable({ events, orders, onEventUpdate, onEventDele
                             Editar
                           </Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           className="text-red-400 hover:text-red-300"
                           onClick={() => handleDeleteEvent(ev.id)}
                         >

@@ -27,6 +27,7 @@ model User {
   queueEntries            QueueEntry[]
   staffMembers            StaffMember[]
   tickets                 Ticket[]
+  auditLogs               AuditLog[]
 }
 
 model Organizer {
@@ -44,6 +45,10 @@ model Organizer {
   events       Event[]
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   staffMembers StaffMember[]
+
+  // 🔑 Campo añadido para la vinculación de Split Payments
+  mercadopagoUserId   String?  @map("mercadopago_user_id")
+
 }
 
 model StaffMember {
@@ -61,6 +66,12 @@ model StaffMember {
   @@unique([organizerId, userId])
 }
 
+enum EventType {
+  PRESENCIAL
+  STREAMING
+  HIBRIDO
+}
+
 model Event {
   id              String       @id @default(cuid())
   organizerId     String       @map("organizer_id")
@@ -74,6 +85,9 @@ model Event {
   locationLng     Float?       @map("location_lng")
   bannerUrl       String?      @map("banner_url")
   category        String
+  type            EventType    @default(PRESENCIAL) @map("event_type")
+  streamingUrl    String?
+  streamingKey    String?
   status          String       @default("borrador")
   featured        Boolean      @default(false)
   minPrice        Float?       @map("min_price")
@@ -92,6 +106,7 @@ model Event {
   queueEntries    QueueEntry[]
   tickets         Ticket[]
   ticketTypes     TicketType[]
+  auditLogs       AuditLog[]
 }
 
 /// Cómo aplica el % de comisión (solo si `commissionType` es porcentaje).
@@ -181,6 +196,7 @@ model Ticket {
   eventDate               String                   @map("event_date")
   eventLocation           String                   @map("event_location")
   ticketTypeName          String                   @map("ticket_type_name")
+  accessToken             String?                  @unique @map("access_token")
   qrCode                  String                   @unique @map("qr_code")
   usageStatus             String                   @default("no_usado") @map("usage_status")
   holderName              String                   @map("holder_name")
@@ -194,6 +210,9 @@ model Ticket {
   order                   Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   ticketType              TicketType               @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
   user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pendingDeduction        Float?   // El monto que el staff quiere cobrar
+  pendingOperatorId       String?  // El ID del staff que inició el cobro
+  pendingExpiresAt        DateTime? // Tiempo límite para que el usuario confirme (ej: 1 minuto)
 }
 
 model BankAccount {
@@ -259,6 +278,21 @@ model ContactMessage {
   updatedAt DateTime @updatedAt @map("updated_at")
   userId    String?  @map("user_id")
   user      User?    @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String   // "INGRESO_PUERTA", "CONSUMO_PENDIENTE", "CONSUMO_CONFIRMADO"
+  eventId     String   @map("event_id")
+  userId      String   @map("user_id")
+  operatorId  String   @map("operator_id") // El ID del Staff que escaneó
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
 }
 
 enum UserRole {

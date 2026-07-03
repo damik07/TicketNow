@@ -23,9 +23,11 @@ interface StatsGridProps {
 }
 
 export default function StatsGrid({ events, orders, tickets }: StatsGridProps) {
+  // Filtramos las órdenes aprobadas y sumamos el total_amount (que ya viene neto desde el loadData)
   const totalRevenue = orders
-    .filter((o: Order) => o.payment_status === "aprobado")
+    .filter((o: Order) => o.payment_status === "aprobado" || o.payment_status === "approved")
     .reduce((sum: number, o: Order) => sum + (o.total_amount || 0), 0);
+
   const totalTicketsSold = tickets.length;
   const publishedEvents = events.filter((e: Event) => e.status === "publicado").length;
   const avgTicketPrice = totalTicketsSold > 0 ? totalRevenue / totalTicketsSold : 0;

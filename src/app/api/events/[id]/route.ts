@@ -13,6 +13,7 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions)
+    const { id } = await params;
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -33,7 +34,7 @@ export async function GET(
     // Buscamos el evento incluyendo sus categorías de tickets
     const event = await prisma.event.findUnique({
       where: {
-        id: params.id,
+        id: id,
         organizerId: organizer.id // Seguridad: solo el dueño puede leerlo para editar
       },
       include: {
@@ -58,6 +59,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions)
+    const { id } = await params;
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -75,12 +77,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
     }
 
-    const eventId = params.id
+    
 
     // Check if the event belongs to this organizer
     const event = await prisma.event.findUnique({
       where: {
-        id: eventId,
+        id: id,
         organizerId: organizer.id
       }
     })
@@ -91,7 +93,7 @@ export async function DELETE(
 
     // Delete the event (this will also delete related ticket types due to cascade)
     await prisma.event.delete({
-      where: { id: eventId }
+      where: { id: id }
     })
 
     return NextResponse.json({ message: 'Event deleted successfully' })
@@ -107,6 +109,7 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions)
+    const { id } = await params;
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -123,12 +126,12 @@ export async function PUT(
       return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
     }
 
-    const eventId = params.id
+    
     const { title, description, dateTime, endDateTime, locationName, locationAddress, category, bannerUrl, status, ticketTypes, maxConcurrent, queueActive } = await request.json()
 
     const existingEvent = await prisma.event.findUnique({
       where: {
-        id: eventId,
+        id: id,
         organizerId: organizer.id
       }
     })
@@ -152,13 +155,13 @@ export async function PUT(
       // 1. Si se enviaron tipos de ticket, borramos los existentes de este evento primero
       if (ticketTypes && Array.isArray(ticketTypes)) {
         await tx.ticketType.deleteMany({
-          where: { eventId: eventId }
+          where: { eventId: id }
         })
       }
 
       // 2. Actualizamos el evento y creamos los nuevos tipos de ticket simultáneamente
       return await tx.event.update({
-        where: { id: eventId },
+        where: { id: id },
         data: {
           title,
           description,
@@ -202,6 +205,7 @@ export async function PUT(
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const session = await getServerSession(authOptions)
+    const { id } = await params;
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -216,10 +220,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const { packId } = await request.json()
-    const eventId = params.id
+    
 
     const updatedEvent = await prisma.event.update({
-      where: { id: eventId },
+      where: { id: id },
       data: {
         packId: packId
       },

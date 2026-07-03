@@ -1,3 +1,5 @@
+// components/scanner/QRScanner.tsx
+
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Camera, X } from "lucide-react";

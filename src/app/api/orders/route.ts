@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       // al usuario o si se mantiene el precio base de la entrada según las reglas del paquete.
       const unitPrice = orderLineBuyerUnitPrice(ticketType.price, ticketType.name, packSlice)
       const subtotal = roundMoney(unitPrice * quantity)
-      
+
       pricedItems.push({
         ticketTypeId,
         ticketTypeName: ticketType.name,
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
 
       // Generamos la preferencia de pago apuntando a las URLs de tu entorno
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      
+
       const mpPreference = await preference.create({
         body: {
           items: pricedItems.map((item) => ({
@@ -206,17 +206,21 @@ export async function POST(request: NextRequest) {
       })
 
       // Devolvemos la orden creada en pendiente y el initPoint para redirigir al checkout de MP
-      return NextResponse.json({ 
-        order, 
+      return NextResponse.json({
+        order,
         initPoint: mpPreference.init_point,
-        packApplied: { name: event.pack?.name, isAbsorbed: event.pack?.isAbsorbed } 
+        packApplied: {
+          name: event.pack?.name,
+          // Evaluamos si el modo de aplicar la comisión es deduciéndola (absorbida)
+          isAbsorbed: event.pack?.ticketPercentApply === 'DEDUCE_DEL_PRECIO'
+        }
       })
     }
 
     // ==========================================
     // 💡 CASO B: PROCESO SIMULADO (Tu flujo original)
     // ==========================================
-    
+
     // Decrementar Stock
     for (const item of pricedItems) {
       await prisma.ticketType.update({
@@ -274,10 +278,10 @@ export async function POST(request: NextRequest) {
       await completeQueueSession(sessionToken, eventId)
     }
 
-    return NextResponse.json({ 
-      order, 
+    return NextResponse.json({
+      order,
       tickets: createdTickets,
-      packApplied: { name: event.pack?.name } 
+      packApplied: { name: event.pack?.name }
     })
 
   } catch (error) {
