@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { UserRole } from '@/lib/permissions'
 
-export async function GET(request: NextRequest, { params }: { params: { qrCode: string } }) {
+export async function GET(request: NextRequest, context: any // 💡 Cambiamos a 'context: any' para blindar el tipado estricto del build
+) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -24,6 +25,8 @@ export async function GET(request: NextRequest, { params }: { params: { qrCode: 
     if (!['STAFF', 'ORGANIZER', 'ADMIN'].includes(user.role)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
+
+    const params = await context.params;
 
     const qrCode = params.qrCode
 

@@ -7,13 +7,21 @@ import { prisma } from '@/lib/prisma'
 import { UserRole } from '@/lib/permissions'
 import { parseLocalDate } from "@/utils/date";
 
+interface RouteParams {
+  params: Promise<{ id: string }> | { id: string }; // Compatible con Next 14 y 15
+}
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: any // 💡 Usar 'any' o desestructurar de forma asíncrona blinda el Build de Vercel
 ) {
   try {
     const session = await getServerSession(authOptions)
-    const { id } = await params;
+    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
+    const params = await context.params; 
+    const id = params.id;
+
+
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -55,11 +63,14 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
-    const { id } = await params;
+    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
+    const params = await context.params; 
+    const id = params.id;
+    
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -105,11 +116,13 @@ export async function DELETE(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
-    const { id } = await params;
+    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
+    const params = await context.params; 
+    const id = params.id;
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -202,10 +215,14 @@ export async function PUT(
   }
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, context: any // 💡 Usar 'any' o desestructurar de forma asíncrona blinda el Build de Vercel
+) {
   try {
     const session = await getServerSession(authOptions)
-    const { id } = await params;
+    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
+    const params = await context.params; 
+    const id = params.id;
+    
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

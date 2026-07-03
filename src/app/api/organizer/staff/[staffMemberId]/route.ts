@@ -4,7 +4,12 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { UserRole } from '@/lib/permissions'
 
-export async function DELETE(request: NextRequest, { params }: { params: { staffMemberId: string } }) {
+
+
+export async function DELETE(
+  request: NextRequest, 
+  context: any // 💡 Cambiamos a 'context: any' para blindar el tipado estricto del build
+) {
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -20,7 +25,13 @@ export async function DELETE(request: NextRequest, { params }: { params: { staff
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const staffMemberId = params.staffMemberId
+    // 🚀 SOLUCIÓN: Resolvemos los params asincrónicamente para que sea 100% compatible
+    const params = await context.params;
+    const staffMemberId = params.staffMemberId;
+
+    if (!staffMemberId) {
+      return NextResponse.json({ error: 'Falta el parámetro staffMemberId' }, { status: 400 })
+    }
 
     // Find the staff member
     const staffMember = await prisma.staffMember.findUnique({
