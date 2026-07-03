@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions, request)
+    const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -109,7 +109,12 @@ export async function PUT(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url!)
     const entryId = searchParams.get('id')
-    const session = await getServerSession(authOptions, request)
+    const session = await getServerSession(authOptions);
+
+    // 🚀 SOLUCIÓN: Validamos que entryId exista y no sea null
+    if (!entryId) {
+      return NextResponse.json({ error: 'Falta el parámetro id en la URL' }, { status: 400 })
+    }
 
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
