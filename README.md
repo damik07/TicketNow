@@ -25,10 +25,10 @@
 
 La aplicación está construida sobre un stack full-stack robusto y fuertemente tipado:
 
-* **Framework:** [Next.js 14/15](https://nextjs.org/) (App Router & Route Handlers)
+* **Framework:** [Next.js 15](https://nextjs.org/) (App Router & Route Handlers)
 * **Lenguaje:** [TypeScript](https://www.typescript.org/) (Tipado estricto extremo para robustez en pasarelas de pago)
 * **Estilos:** [Tailwind CSS](https://tailwindcss.com/) + [Shadcn/ui](https://ui.shadcn.com/)
-* **Base de Datos:** [Neon](https://neon.tech/) / [Supabase](https://supabase.com/) (PostgreSQL Serverless)
+* **Base de Datos:** [Neon](https://neon.tech/) (PostgreSQL Serverless)
 * **ORM:** [Prisma](https://www.prisma.io/)
 * **Gráficos e Interfaces:** [Recharts](https://recharts.org/) & [Lucide React](https://lucide.dev/)
 * **Manejo de Fechas:** [Date-fns](https://date-fns.org/) con soporte estricto para localización local (`es-AR`).
