@@ -35,26 +35,6 @@ La aplicación está construida sobre un stack full-stack robusto y fuertemente 
 
 ---
 
-## ⚙️ Configuración del Entorno (`.env`)
-
-Para correr el proyecto localmente o realizar el deploy en plataformas como **Vercel**, configurá las siguientes variables de entorno:
-
-```env
-# Conexión a la Base de Datos (Neon/Supabase)
-DATABASE_URL="postgresql://user:password@ep-pool-id.provider.postgres.neon.tech/dbname?sslmode=require"
-DIRECT_URL="postgresql://user:password@ep-pool-id.provider.postgres.neon.tech/dbname?sslmode=require"
-
-# Autenticación y Seguridad
-NEXTAUTH_SECRET="tu_secreto_super_seguro_para_nextauth"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-
-# Pasarela de Pagos (Mercado Pago API)
-MERCADOPAGO_ACCESS_TOKEN="TEST-mp-access-token..."
-NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY="TEST-mp-public-key..."
-MP_CLIENT_ID="tu_client_id_oauth"
-MP_CLIENT_SECRET="tu_client_secret_oauth"
-
-
 
 ## 🗂️ Arquitectura del Proyecto (Puntos Clave)
 El proyecto cuenta con lógicas críticas para mitigar dolores de cabeza comunes en entornos de producción:
