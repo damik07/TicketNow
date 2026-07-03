@@ -1,10 +1,10 @@
 import Checkout from '@/components/pages/Checkout'
-import Layout from '@/layoutWrapper'
+// estos archivos tenian el layout  envolviendo los componentes
 
 export default function CheckoutPage() {
   return (
-    <Layout currentPageName="Checkout">
+    
       <Checkout />
-    </Layout>
+    
   )
 }
