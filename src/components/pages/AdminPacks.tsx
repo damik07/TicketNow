@@ -67,14 +67,15 @@ const FEATURES = [
 
 function normalizePackFromApi(raw: Record<string, unknown>): Pack {
   const p = raw as unknown as Pack;
+  
   return {
     ...p,
     ticketPercentApply:
-      p.ticketPercentApply === "DEDUCE_DEL_PRECIO" || p.ticketPercentApply === "DEDUCTS_FROM_PRICE"
+      (p.ticketPercentApply as string) === "DEDUCE_DEL_PRECIO" || (p.ticketPercentApply as string) === "DEDUCTS_FROM_PRICE"
         ? "DEDUCE_DEL_PRECIO"
         : "ADICIONA_AL_PRECIO",
     consumptionPercentApply:
-      p.consumptionPercentApply === "DEDUCE_DEL_PRECIO" || p.consumptionPercentApply === "DEDUCTS_FROM_PRICE"
+      (p.consumptionPercentApply as string) === "DEDUCE_DEL_PRECIO" || (p.consumptionPercentApply as string) === "DEDUCTS_FROM_PRICE"
         ? "DEDUCE_DEL_PRECIO"
         : "ADICIONA_AL_PRECIO",
   };
