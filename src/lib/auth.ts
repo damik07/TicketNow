@@ -1,3 +1,5 @@
+// src/lib/auth.ts
+
 import { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import { normalizeUserRole } from '@/lib/user-role'

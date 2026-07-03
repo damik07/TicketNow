@@ -1,13 +1,16 @@
+// components/auth/GoogleLogin.tsx
+'use client';
+
 import React from 'react';
-import { useAuth } from '@/lib/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 
 const GoogleLogin: React.FC = () => {
-  const { googleLogin, isLoadingAuth } = useAuth();
+  const { login, isLoadingAuth } = useAuth();
 
   const handleGoogleLogin = async () => {
     try {
       // Implementar Google OAuth aquí
-      await googleLogin();
+      await login();
     } catch (error) {
       console.error('Error en login de Google:', error);
     }
