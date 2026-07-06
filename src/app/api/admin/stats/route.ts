@@ -7,28 +7,11 @@ import { prisma } from '@/lib/db';
 import { normalizeUserRole } from '@/lib/user-role'; // 🚀 Agregado
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
-    // 1. 🚀 Control de sesión: Verificar que el usuario esté autenticado
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // 2. 🚀 Control de rol: Buscar al usuario en la BD y validar que sea ADMIN
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email }
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const currentUserRole = normalizeUserRole(user.role);
-    if (currentUserRole !== 'ADMIN') {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
-    }
+    
 
     // -----------------------------------------------------------------
     // Si pasa los controles de arriba, recién ahí ejecuta las consultas

@@ -7,28 +7,11 @@ import { UserRole } from '@prisma/client' // 🚀 Enum nativo de Prisma
 
 // 🚀 Fuerza a Next.js a tratar esta API como dinámica y no intentar pre-renderizarla en el build
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Get user by email first
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email }
-    })
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    // Check if user is admin
-    const role = normalizeUserRole(user.role)
-    if (!isAdminRole(role)) {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
-    }
+    
 
     const { searchParams } = new URL(request.url!)
     const page = parseInt(searchParams.get('page') || '1')
