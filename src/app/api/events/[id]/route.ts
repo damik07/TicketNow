@@ -7,6 +7,8 @@ import { prisma } from '@/lib/db'
 import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
 import { parseLocalDate } from "@/utils/date";
 
+export const dynamic = 'force-dynamic';
+
 interface RouteParams {
   params: Promise<{ id: string }> | { id: string }; // Compatible con Next 14 y 15
 }

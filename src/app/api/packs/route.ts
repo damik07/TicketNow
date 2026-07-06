@@ -6,6 +6,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
 
+export const dynamic = 'force-dynamic';
+
 function parsePercentApplyMode(value: unknown): PackPercentApplyMode {
   if (
     value === PackPercentApplyMode.DEDUCE_DEL_PRECIO ||

@@ -7,6 +7,8 @@ import { prisma } from '@/lib/db'
 import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
 import { parseLocalDate } from "@/utils/date";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url!)

@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
+export const dynamic = 'force-dynamic';
+
 // 🧠 Algoritmo matemático para validar Dígitos Verificadores del CBU/CVU argentino
 function validarCBU(cbu: string): boolean {
   if (cbu.length !== 22 || !/^\d+$/.test(cbu)) return false;

@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
+export const dynamic = 'force-dynamic';
+
 const QUEUE_THRESHOLD = 3;
 const ADMIT_BATCH = 2;
 const ADMIT_INTERVAL = 15000;

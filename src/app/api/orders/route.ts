@@ -8,6 +8,8 @@ import { orderLineBuyerUnitPrice, packCommissionSliceFromPack, roundMoney } from
 import { completeQueueSession, validateCheckoutAccess } from '@/lib/queue'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 
+export const dynamic = 'force-dynamic';
+
 // Inicializamos el cliente de Mercado Pago
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '',
