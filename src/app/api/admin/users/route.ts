@@ -5,6 +5,9 @@ import { prisma } from '@/lib/db'
 import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
 import { UserRole } from '@prisma/client' // 🚀 Enum nativo de Prisma
 
+// 🚀 Fuerza a Next.js a tratar esta API como dinámica y no intentar pre-renderizarla en el build
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
