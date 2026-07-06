@@ -2,15 +2,15 @@
 
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { useAuth } from './AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function NavigationTracker() {
     const pathname = usePathname();
-    const { isAuthenticated } = useAuth();
+    const { user } = useAuth();
 
     // Log user activity when navigating to a page
     useEffect(() => {
-        if (!pathname || !isAuthenticated) return;
+        if (!pathname || !user) return;
 
         // Extract page name from pathname
         let pageName;
@@ -25,7 +25,7 @@ export default function NavigationTracker() {
 
         // Simulación de logging - en producción se implementaría con el backend
         console.log(`User navigated to: ${pageName}`);
-    }, [pathname, isAuthenticated]);
+    }, [pathname, user]);
 
     return null;
 }
