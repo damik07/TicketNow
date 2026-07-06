@@ -48,7 +48,8 @@ declare global {
   }
 }
 
-export default function SalaEspera() {
+// 💡 Subcomponente interno con toda la lógica de la Sala de Espera
+function SalaEsperaContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -258,7 +259,6 @@ export default function SalaEspera() {
       }
     };
 
-    // Ejecutamos inmediatamente para no tener 4 segundos en blanco
     checkStatus();
 
     if (pollRef.current) window.clearInterval(pollRef.current);
@@ -345,11 +345,8 @@ export default function SalaEspera() {
   };
 
   const isAdmitted = queueEntry?.status === "admitted";
-
-  // Cambiado: Si la posición es 0 (inicial), evitamos cálculos erróneos en la UI
   const currentPos = queueEntry?.position || 0;
 
-  // ~10 min por tanda de compradores simultáneos (maxConcurrent)
   const estimatedWait = currentPos > 0
     ? Math.max(1, Math.ceil(currentPos / Math.max(1, maxConcurrent))) * 10
     : 0;
@@ -370,7 +367,6 @@ export default function SalaEspera() {
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center px-4 py-12">
       <AnimatePresence mode="wait">
         {isAdmitted ? (
-          /* ---- ADMITTED DESIGN ---- */
           <motion.div key="admitted" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center max-w-md w-full">
             <div className="w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-6 ring-4 ring-green-500/20">
               <ChevronRight className="w-12 h-12 text-green-400" />
@@ -393,9 +389,7 @@ export default function SalaEspera() {
             </Button>
           </motion.div>
         ) : (
-          /* ---- WAITING DESIGN ---- */
           <motion.div key="waiting" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-2xl">
-            {/* Header */}
             <div className="text-center mb-10">
               <div className="inline-flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 rounded-full px-4 py-1.5 mb-5">
                 <Users className="w-3.5 h-3.5 text-violet-400" />
@@ -405,7 +399,6 @@ export default function SalaEspera() {
               <p className="text-slate-400">Hay mucha demanda en este evento. Mantené esta pantalla abierta.</p>
             </div>
 
-            {/* Queue Card */}
             <div className="bg-slate-900/50 border border-slate-800/50 rounded-3xl p-6 sm:p-8 mb-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -449,7 +442,7 @@ export default function SalaEspera() {
               </p>
             </div>
 
-            {/* Music/Video Section */}
+            {/* Sección Multimedia de YouTube */}
             <div className="bg-slate-900/50 border border-slate-800/50 rounded-3xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800/50">
                 <div className="flex items-center gap-2 truncate mr-4">
@@ -491,7 +484,6 @@ export default function SalaEspera() {
                 </div>
               )}
 
-              {/* Track Selector & Input */}
               <div className="p-4 space-y-4">
                 <div>
                   <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
@@ -589,5 +581,18 @@ export default function SalaEspera() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// 💡 Exportación por defecto envuelta en Suspense requerida por Next.js App Router
+export default function SalaEspera() {
+  return (
+    <React.Suspense fallback={
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+      </div>
+    }>
+      <SalaEsperaContent />
+    </React.Suspense>
   );
 }

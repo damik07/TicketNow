@@ -26,7 +26,7 @@ interface Event {
   featured: boolean;
   total_capacity?: number;
   min_price?: number;
-  max_tickets_per_user?: number; // 💡 AGREGADO EN LA INTERFAZ
+  max_tickets_per_user?: number;
 }
 
 interface TicketType {
@@ -41,12 +41,32 @@ interface TicketType {
   sort_order: number;
 }
 
+// Tipado para la respuesta cruda de la API de tipos de tickets
+interface ApiTicketType {
+  id: string;
+  eventId?: string;
+  event_id?: string;
+  name: string;
+  description?: string;
+  price: number;
+  stockTotal?: number;
+  stock_total?: number;
+  stockAvailable?: number;
+  stock_available?: number;
+  max_tickets_per_user?: number | string;
+  maxPerUser?: number;
+  max_per_user?: number;
+  sortOrder?: number;
+  sort_order?: number;
+}
+
 const CATEGORY_LABELS = {
   musica: "Música", deportes: "Deportes", teatro: "Teatro", conferencia: "Conferencia",
   festival: "Festival", fiesta: "Fiesta", gastronomia: "Gastronomía", otro: "Otro"
 };
 
-export default function EventDetail() {
+// Componente interno que consume los params de forma segura
+function EventDetailContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -78,19 +98,17 @@ export default function EventDetail() {
         setEvent(finalEvent || null);
 
         if (Array.isArray(ticketTypesData)) {
-          const mappedTickets = ticketTypesData.map((tt: any) => ({
+          const mappedTickets = ticketTypesData.map((tt: ApiTicketType) => ({
             id: tt.id,
-            event_id: tt.eventId || tt.event_id,
+            event_id: tt.eventId || tt.event_id || "",
             name: tt.name,
             description: tt.description,
             price: tt.price,
-            stock_total: tt.stockTotal || tt.stock_total,
-            stock_available: tt.stockAvailable !== undefined ? tt.stockAvailable : tt.stock_available,
-
+            stock_total: tt.stockTotal || tt.stock_total || 0,
+            stock_available: tt.stockAvailable !== undefined ? tt.stockAvailable : (tt.stock_available || 0),
             max_per_user: tt.max_tickets_per_user !== undefined
               ? Number(tt.max_tickets_per_user)
               : (tt.maxPerUser || tt.max_per_user || 4),
-
             sort_order: tt.sortOrder || tt.sort_order || 0,
           }));
           setTicketTypes(mappedTickets);
@@ -107,7 +125,7 @@ export default function EventDetail() {
     loadData();
   }, [eventId]);
 
-  // Consulta cuántas entradas ya compró este usuario para este evento
+  // Consulta cuántas entradas ya compró este usuario
   useEffect(() => {
     const checkUserLimits = async () => {
       if (!eventId) return;
@@ -130,23 +148,18 @@ export default function EventDetail() {
 
   const totalQty = Object.values(quantities).reduce((a, b) => a + b, 0);
 
-  // Límite absoluto global del modelo Event
   const maxEventLimit = event?.max_tickets_per_user !== undefined
     ? Number(event.max_tickets_per_user)
     : 4;
 
-  // Remanente real del evento unificado
   const remainingEventLimit = Math.max(0, maxEventLimit - alreadyBought);
 
-  console.log("DEBUG LÍMITES -> Límite Global Evento:", maxEventLimit, "Remanente para comprar:", remainingEventLimit, "Ya comprados en historial:", alreadyBought);
-
-  // Interceptamos y modificamos la función setQuantities para usar remainingEventLimit corregido
   const handleSetQuantitiesSafe = (newQuantities: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => {
     setQuantities((prev) => {
       const updated = typeof newQuantities === 'function' ? newQuantities(prev) : newQuantities;
       const proposedTotal = Object.values(updated).reduce((a, b) => a + b, 0);
 
-      if (proposedTotal > remainingEventLimit) { // 💡 CORREGIDO AQUÍ
+      if (proposedTotal > remainingEventLimit) {
         alert(`Límite excedido: Ya compraste ${alreadyBought} entrada(s). Solo podés seleccionar hasta ${remainingEventLimit} más.`);
         return prev;
       }
@@ -325,7 +338,6 @@ export default function EventDetail() {
               <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-6">
                 <h3 className="text-lg font-semibold text-white mb-5">Entradas</h3>
 
-                {/* 💡 AVISO UX CORREGIDO CON REMANENTE UNIFICADO */}
                 {isAuthenticated && alreadyBought > 0 && (
                   <div className={`p-3 rounded-xl mb-4 text-xs border flex items-start gap-2 ${remainingEventLimit === 0
                     ? "bg-red-500/10 text-red-400 border-red-500/20"
@@ -348,25 +360,28 @@ export default function EventDetail() {
                   ticketTypes={ticketTypes}
                   quantities={quantities}
                   setQuantities={handleSetQuantitiesSafe}
-                  maxAllowedItems={remainingEventLimit} // 💡 ENLAZADO PERFECTAMENTE
+                  maxAllowedItems={remainingEventLimit}
                 />
 
-                {totalQty > 0 && (
+                {/* Caja de checkout fija o dinámica según el remanente */}
+                {(totalQty > 0 || remainingEventLimit === 0) && (
                   <div className="mt-6 pt-5 border-t border-slate-800">
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-sm text-slate-400">{totalQty} entrada{totalQty > 1 ? "s" : ""}</span>
-                      <span className="text-xl font-bold text-white">
-                        ${totalPrice.toLocaleString("es-AR")}
-                      </span>
-                    </div>
+                    {totalQty > 0 && (
+                      <div className="flex justify-between items-center mb-4">
+                        <span className="text-sm text-slate-400">{totalQty} entrada{totalQty > 1 ? "s" : ""}</span>
+                        <span className="text-xl font-bold text-white">
+                          ${totalPrice.toLocaleString("es-AR")}
+                        </span>
+                      </div>
+                    )}
                     <Button
                       onClick={handleBuyClick}
-                      disabled={checkingQueue || remainingEventLimit === 0} // 💡 CORREGIDO AQUÍ
+                      disabled={checkingQueue || remainingEventLimit === 0}
                       className="w-full h-12 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 border-0 shadow-lg shadow-violet-500/25 text-base font-medium disabled:opacity-50"
                     >
                       {checkingQueue ? (
                         <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : remainingEventLimit === 0 ? ( // 💡 CORREGIDO AQUÍ
+                      ) : remainingEventLimit === 0 ? (
                         "Límite Máximo Alcanzado"
                       ) : (
                         "Comprar Entradas"
@@ -380,5 +395,18 @@ export default function EventDetail() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Exportación por defecto envuelta en Suspense para cumplir con Next.js App Router
+export default function EventDetail() {
+  return (
+    <React.Suspense fallback={
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+      </div>
+    }>
+      <EventDetailContent />
+    </React.Suspense>
   );
 }

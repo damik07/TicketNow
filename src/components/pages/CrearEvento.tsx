@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ interface Event {
   longitude: number | null;
   streaming_url: string;
   streaming_key: string;
-  category: String;
+  category: string;
   banner_url: string;
   status: string;
   featured: boolean;
@@ -66,7 +66,8 @@ const CATEGORIES = [
   { value: "otro", label: "Otro" },
 ];
 
-export default function CrearEvento() {
+// 1. 📦 Subcomponente interno que contiene toda la lógica del formulario
+function FormularioEvento() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const eventId = searchParams.get("id");
@@ -77,7 +78,7 @@ export default function CrearEvento() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [searchingAddress, setSearchingAddress] = useState(false); // 👈 Estado de carga para buscar dirección
+  const [searchingAddress, setSearchingAddress] = useState(false);
 
   const isLoadingRef = useRef(false);
 
@@ -95,7 +96,6 @@ export default function CrearEvento() {
     { name: "General", description: "", price: 0, stock_total: 100, max_per_user: 4 },
   ]);
 
-  // 1. 🔄 MAPA A TEXTO: Función para obtener la dirección real según las coordenadas (Geocoding inverso)
   const fetchAddressFromCoords = async (lat: number, lng: number) => {
     try {
       const response = await fetch(
@@ -106,7 +106,6 @@ export default function CrearEvento() {
       const data = await response.json();
       
       if (data.display_name) {
-        // Obtenemos una versión simplificada de la dirección (Calle, Número, Ciudad)
         const street = data.address.road || "";
         const houseNumber = data.address.house_number || "";
         const city = data.address.city || data.address.town || data.address.village || "";
@@ -123,13 +122,11 @@ export default function CrearEvento() {
     }
   };
 
-  // Handler para capturar clics en el mapa e iniciar la geocodificación
   const handleMapChange = (lat: number, lng: number) => {
     setEvent(prev => ({ ...prev, latitude: lat, longitude: lng }));
     fetchAddressFromCoords(lat, lng);
   };
 
-  // 2. 🔄 TEXTO A MAPA: Función para buscar coordenadas a partir de la dirección escrita (Geocoding directo)
   const handleSearchAddress = async () => {
     if (!event.location_address.trim()) {
       toast.error("Ingresá una dirección antes de buscar");
@@ -138,7 +135,6 @@ export default function CrearEvento() {
 
     setSearchingAddress(true);
     try {
-      // Agregamos ", Entre Rios, Argentina" para acotar los resultados y dar precisión local
       const queryAddress = `${event.location_address}, Entre Rios, Argentina`;
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryAddress)}&limit=1`,
@@ -512,7 +508,7 @@ export default function CrearEvento() {
                     <MapSelector
                       lat={event.latitude || -31.7413}
                       lng={event.longitude || -60.5115}
-                      onChange={handleMapChange} // 👈 Cambiado para geocodificar la dirección automáticamente
+                      onChange={handleMapChange}
                     />
                     <div className="grid grid-cols-2 gap-3 text-xs text-slate-500">
                       <div>Latitud: <span className="text-slate-300 font-mono">{event.latitude?.toFixed(6)}</span></div>
@@ -693,5 +689,20 @@ export default function CrearEvento() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 2. 🛡️ Exportación por defecto envuelta en Suspense para mitigar problemas con useSearchParams()
+export default function CrearEvento() {
+  return (
+    <Suspense 
+      fallback={
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+        </div>
+      }
+    >
+      <FormularioEvento />
+    </Suspense>
   );
 }

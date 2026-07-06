@@ -1,6 +1,7 @@
+// 📄 Ubicación: src/app/Checkout/page.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react"; // 🚀 Agregado Suspense
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,8 @@ interface CheckoutItem {
   subtotal: number;
 }
 
-export default function Checkout() {
+// 📦 1. Todo tu componente original pasa a llamarse "CheckoutContent"
+function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -51,7 +53,7 @@ export default function Checkout() {
   const [holderName, setHolderName] = useState("");
 
   useEffect(() => {
-    let intervalId: number | null = null; // Guardamos el ID del intervalo de forma segura
+    let intervalId: number | null = null;
 
     const loadUserAndCheckoutData = async () => {
       try {
@@ -59,7 +61,6 @@ export default function Checkout() {
 
         let localItems: CheckoutItem[] = [];
 
-        // 1. Recuperamos los datos de la compra desde el sessionStorage
         if (typeof window !== "undefined" && window.sessionStorage) {
           const savedItems = window.sessionStorage.getItem(`checkout_items_${eventId}`);
           if (savedItems) {
@@ -71,7 +72,6 @@ export default function Checkout() {
           }
         }
 
-        // Carga de datos de usuario y tickets comprados en el pasado
         const response = await fetch(`/api/auth/me?eventId=${eventId}`);
         const data = await response.json();
 
@@ -83,7 +83,6 @@ export default function Checkout() {
         setUser(data.user);
         setHolderName(data.user.full_name || "");
 
-        // Carga de datos del evento
         const eventResponse = await fetch(`/api/events?eventId=${eventId}`);
         const eventData = await eventResponse.json();
 
@@ -95,7 +94,6 @@ export default function Checkout() {
         const currentEvent = eventData[0];
         setEvent(currentEvent);
 
-        // 🛡️ CONTROL DE ENTRADAS COMPLETO
         const ticketsInCart = localItems.reduce((sum, item) => sum + item.quantity, 0);
         const pastTickets = data.ticketsBought || 0;
         const totalTicketsCombined = ticketsInCart + pastTickets;
@@ -106,7 +104,6 @@ export default function Checkout() {
           return;
         }
 
-        // Validación de turno activo (sala de espera / maxConcurrent)
         const rawToken = window.sessionStorage.getItem(`queue_token_${eventId}`);
         if (!rawToken) {
           toast.error('No tenés un turno de compra activo.');
@@ -150,7 +147,6 @@ export default function Checkout() {
           }, 1000);
         }
 
-        // Ahora sí, garantizamos que el loading pase a false al terminar todo con éxito
         setLoading(false);
       } catch (error) {
         console.error('Failed to load user data:', error);
@@ -162,15 +158,11 @@ export default function Checkout() {
       loadUserAndCheckoutData();
     }
 
-    // Retorno limpio de React para destruir el intervalo si desmolda el componente
     return () => {
       if (intervalId) window.clearInterval(intervalId);
     };
   }, [eventId, router]);
 
-  // =========================================================================
-  // LÓGICA DE CÁLCULO
-  // =========================================================================
   const packSlice = event?.pack ? packCommissionSliceFromPack(event.pack) : null;
 
   const finalItems = items.map((item) => {
@@ -204,7 +196,6 @@ export default function Checkout() {
     }
   }, [event, items]);
 
-
   const handlePurchase = async () => {
     if (!user || !event) {
       toast.error("Error: datos de usuario o evento no disponibles");
@@ -226,7 +217,6 @@ export default function Checkout() {
         ? window.sessionStorage.getItem(`queue_token_${eventId}`)
         : null;
 
-      // 1. Creamos la orden en la base de datos (queda inicialmente en estado pendiente)
       const orderResponse = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -244,13 +234,11 @@ export default function Checkout() {
         throw new Error(payload.error || 'Error al crear la orden');
       }
 
-      // 🔑 MODIFICACIÓN: Lógica cuando el entorno es SIMULADO
       if (isSimulated) {
-        // Ejecutamos el llamado a nuestra nueva API para procesar los tickets y disparar el mail
         const simulateResponse = await fetch('/api/checkout/simulate-success', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: payload.id }), // Pasamos el id de la orden generada recién
+          body: JSON.stringify({ orderId: payload.id }),
         });
 
         const simulatePayload = await simulateResponse.json();
@@ -259,7 +247,6 @@ export default function Checkout() {
           throw new Error(simulatePayload.error || 'Error al procesar la simulación de pago');
         }
 
-        // Limpieza de almacenamiento temporal una vez confirmado todo con el backend
         if (typeof window !== 'undefined' && eventId) {
           window.sessionStorage.removeItem(`queue_token_${eventId}`);
           window.sessionStorage.removeItem(`checkout_items_${eventId}`);
@@ -270,7 +257,6 @@ export default function Checkout() {
         setSuccess(true);
         toast.success("¡Compra simulada con éxito y entradas enviadas por mail!");
       } else {
-        // Lógica de producción/sandbox real con pasarela Mercado Pago
         if (payload.initPoint) {
           window.location.href = payload.initPoint;
         } else {
@@ -447,5 +433,20 @@ export default function Checkout() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 🚀 2. El export por defecto queda limpio y envuelto en Suspense con un esqueleto de carga
+export default function Checkout() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+        </div>
+      }
+    >
+      <CheckoutContent />
+    </Suspense>
   );
 }
