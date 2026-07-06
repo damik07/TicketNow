@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { UserRole } from '@/lib/permissions'
+import { normalizeUserRole } from '@/lib/user-role' // 🚀 Cambiado
 
 
 
@@ -44,11 +44,11 @@ export async function DELETE(
     if (!staffMember) {
       return NextResponse.json({ error: 'Staff member not found' }, { status: 404 })
     }
+    const currentUserRole = normalizeUserRole(user.role)
 
-    // Check permissions
-    if (user.role === UserRole.ADMIN) {
+    if (currentUserRole === 'ADMIN') {
       // Admin can delete any staff member
-    } else if (user.role === UserRole.ORGANIZER) {
+   } else if (currentUserRole === 'ORGANIZER') {
       // Organizer can only delete their own staff members
       const organizer = await prisma.organizer.findUnique({
         where: { userId: user.id }

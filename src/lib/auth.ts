@@ -26,7 +26,7 @@ export const authOptions: NextAuthOptions = {
       // 1) Primer inicio de sesión con Google: upsert en DB y rol inicial
       if (account && user) {
         try {
-          const { prisma } = await import('./prisma')
+          const { prisma } = await import('./db')
 
           const dbUser = await prisma.user.upsert({
             where: { email: user.email! },
@@ -57,7 +57,7 @@ export const authOptions: NextAuthOptions = {
         }
       } else {
         try {
-          const { prisma } = await import('./prisma')
+          const { prisma } = await import('./db')
           let dbUser: { id: string; role: string } | null = null
 
           if (token.id) {

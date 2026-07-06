@@ -1,10 +1,14 @@
+// 📄 Ubicación: src/app/api/tickets/[id]/validate/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { UserRole } from '@/lib/permissions'
+import { normalizeUserRole } from '@/lib/user-role' // 🚀 Cambiado
 
-export async function POST(request: NextRequest, context: any // 💡 Cambiamos a 'context: any' para blindar el tipado estricto del build
+export async function POST(
+  request: NextRequest, 
+  context: any // 💡 Mantenemos para blindar el tipado estricto del build
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -21,8 +25,9 @@ export async function POST(request: NextRequest, context: any // 💡 Cambiamos 
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    // Check if user has permission to validate tickets (staff, organizer, or admin)
-    if (!['STAFF', 'ORGANIZER', 'ADMIN'].includes(user.role)) {
+    // 🚀 Cambiado: Chequeo de rol utilizando el helper de normalización unificado
+    const currentUserRole = normalizeUserRole(user.role)
+    if (!['STAFF', 'ORGANIZER', 'ADMIN'].includes(currentUserRole)) {
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
     }
 

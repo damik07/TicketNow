@@ -24,3 +24,21 @@ export function isOrganizerOrAdmin(role: AppUserRole): boolean {
 export function isManagementRole(role: AppUserRole): boolean {
   return role === 'STAFF' || role === 'ORGANIZER' || role === 'ADMIN'
 }
+
+/** * 🚀 NUEVO: Traído del archivo viejo y unificado con STAFF.
+ * Helper para obtener el display name del rol en castellano para la UI.
+ */
+export function getRoleDisplayName(role: AppUserRole): string {
+  switch (role) {
+    case 'USER':
+      return 'Usuario';
+    case 'ORGANIZER':
+      return 'Organizador';
+    case 'ADMIN':
+      return 'Administrador';
+    case 'STAFF':
+      return 'Staff Operativo';
+    default:
+      return 'Desconocido';
+  }
+}

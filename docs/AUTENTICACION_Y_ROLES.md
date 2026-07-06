@@ -91,7 +91,7 @@ src/
 ├── lib/
 │   ├── auth.ts              # NextAuth: GoogleProvider + JWT/sesión
 │   ├── user-role.ts         # Normalización de roles (UI + middleware)
-│   └── permissions.ts       # Sistema de permisos
+│   └── middleware.ts        # Sistema de permisos
 ├── app/
 │   ├── Login/page.tsx       # Página de login (Google vía NextAuth)
 │   ├── api/auth/[...nextauth]/route.ts  # NextAuth (OAuth Google)

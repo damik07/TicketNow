@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { UserRole } from '@/lib/permissions'
+import { normalizeUserRole } from '@/lib/user-role'
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
 
     let staffMembers = []
 
-    if (user.role === UserRole.ADMIN) {
+    const currentUserRole = normalizeUserRole(user.role) // 🚀 Normalizamos el rol
+
+    if (currentUserRole === 'ADMIN') {
       // Admin can see all staff from all organizers
       staffMembers = await prisma.staffMember.findMany({
         include: {
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { createdAt: 'desc' }
       })
-    } else if (user.role === UserRole.ORGANIZER) {
+    } else if (currentUserRole === 'ORGANIZER') {
       // Organizer can only see their own staff
       const organizer = await prisma.organizer.findUnique({
         where: { userId: user.id }
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Only organizers can add staff members
-    if (user.role !== UserRole.ORGANIZER) {
+    if (normalizeUserRole(user.role) !== 'ORGANIZER') {
       return NextResponse.json({ error: 'Only organizers can add staff members' }, { status: 403 })
     }
 

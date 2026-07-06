@@ -1,9 +1,10 @@
+// 📄 Ubicación: src/app/api/packs/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { PackPercentApplyMode } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { UserRole } from '@/lib/permissions'
+import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
 
 function parsePercentApplyMode(value: unknown): PackPercentApplyMode {
   if (
@@ -23,12 +24,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user by email first
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
 
-    if (!user || user.role !== UserRole.ADMIN) {
+    // 🚀 Cambiado: Validación unificada de Administrador
+    if (!user || !isAdminRole(normalizeUserRole(user.role))) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -59,12 +60,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user by email first
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
 
-    if (!user || user.role !== UserRole.ADMIN) {
+    // 🚀 Cambiado: Validación unificada de Administrador
+    if (!user || !isAdminRole(normalizeUserRole(user.role))) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -115,12 +116,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user by email first
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
 
-    if (!user || user.role !== UserRole.ADMIN) {
+    // 🚀 Cambiado: Validación unificada de Administrador
+    if (!user || !isAdminRole(normalizeUserRole(user.role))) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -180,12 +181,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user by email first
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
 
-    if (!user || user.role !== UserRole.ADMIN) {
+    // 🚀 Cambiado: Validación unificada de Administrador
+    if (!user || !isAdminRole(normalizeUserRole(user.role))) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 

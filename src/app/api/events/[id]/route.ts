@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { UserRole } from '@/lib/permissions'
+import { normalizeUserRole, isAdminRole, normalizeUserRole } from '@/lib/user-role' // 🚀 Cambiado
 import { parseLocalDate } from "@/utils/date";
 
 interface RouteParams {
@@ -232,7 +232,7 @@ export async function PATCH(request: NextRequest, context: any // 💡 Usar 'any
       where: { email: session.user.email }
     })
 
-    if (!user || user.role !== UserRole.ADMIN) {
+    if (!user || !isAdminRole(normalizeUserRole(user.role))) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 

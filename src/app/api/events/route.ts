@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { UserRole } from '@/lib/permissions'
+import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
 import { parseLocalDate } from "@/utils/date";
 
 export async function GET(request: NextRequest) {
@@ -24,7 +24,12 @@ export async function GET(request: NextRequest) {
         const user = await prisma.user.findUnique({
           where: { email: session.user.email }
         })
-        isAdmin = user?.role === UserRole.ADMIN
+        
+        // 🚀 Cambiado: Validación simplificada usando el helper unificado
+        if (user) {
+          const role = normalizeUserRole(user.role)
+          isAdmin = isAdminRole(role)
+        }
       }
     }
 

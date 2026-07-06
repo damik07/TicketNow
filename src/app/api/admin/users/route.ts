@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { hasPermission, UserRole } from '@/lib/permissions'
+import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
+import { UserRole } from '@prisma/client' // 🚀 Enum nativo de Prisma
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +22,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user is admin
-    if (!hasPermission(user.role as UserRole, 'users', 'read')) {
+    const role = normalizeUserRole(user.role)
+    if (!isAdminRole(role)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '10')
     const search = searchParams.get('search') || ''
-    const role = searchParams.get('role') || ''
+    const roleParam = searchParams.get('role') || ''
 
     const where = {
       ...(search && {
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
           { full_name: { contains: search, mode: 'insensitive' as const } }
         ]
       }),
-      ...(role && role !== 'all' && { role: role as UserRole })
+      ...(roleParam && roleParam !== 'all' && { role: roleParam as UserRole })
     }
 
     const [users, total] = await Promise.all([
@@ -98,7 +100,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is admin
-    if (!hasPermission(user.role as UserRole, 'users', 'create')) {
+    const userRole = normalizeUserRole(user.role)
+    if (!isAdminRole(userRole)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -158,7 +161,8 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if user is admin
-    if (!hasPermission(user.role as UserRole, 'users', 'update')) {
+    const userRole = normalizeUserRole(user.role)
+    if (!isAdminRole(userRole)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -213,7 +217,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if user is admin
-    if (!hasPermission(user.role as UserRole, 'users', 'delete')) {
+    const userRole = normalizeUserRole(user.role)
+    if (!isAdminRole(userRole)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 

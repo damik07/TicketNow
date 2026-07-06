@@ -1,3 +1,5 @@
+// 📄 Ubicación: src/components/admin/UserManagement.tsx
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -12,13 +14,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Search, Shield, UserCheck, UserX, Edit, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { UserRole, getRoleDisplayName } from '@/lib/permissions';
+
+// 🚀 Cambiado: Usamos strings literales limpios en lugar del enum obsoleto
+type AllowedRoles = 'ADMIN' | 'ORGANIZER' | 'USER';
 
 interface User {
   id: string;
   email: string;
   full_name: string | null;
-  role: UserRole;
+  role: AllowedRoles;
   active: boolean;
   createdAt: string;
   organizer?: {
@@ -35,6 +39,16 @@ interface Pagination {
   pages: number;
 }
 
+// Helper local para mostrar los nombres de los roles de forma amigable
+const getRoleDisplayName = (role: AllowedRoles): string => {
+  switch (role) {
+    case 'ADMIN': return 'Administrador';
+    case 'ORGANIZER': return 'Organizador';
+    case 'USER': return 'Usuario';
+    default: return role;
+  }
+};
+
 export default function UserManagement() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -49,7 +63,7 @@ export default function UserManagement() {
   });
   const [editDialog, setEditDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [newRole, setNewRole] = useState<UserRole>(UserRole.USER);
+  const [newRole, setNewRole] = useState<AllowedRoles>('USER');
   const [newActive, setNewActive] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [createDialog, setCreateDialog] = useState(false);
@@ -57,10 +71,10 @@ export default function UserManagement() {
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [newUser, setNewUser] = useState({
+  const [newUser, setNewUser] = useState<{ email: string; full_name: string; role: AllowedRoles; active: boolean }>({
     email: '',
     full_name: '',
-    role: UserRole.USER,
+    role: 'USER',
     active: true
   });
 
@@ -129,7 +143,6 @@ export default function UserManagement() {
 
       const updatedUser = await response.json();
       
-      // Update local state
       setUsers(users.map(u => u.id === updatedUser.id ? updatedUser : u));
       setEditDialog(false);
       toast.success('Usuario actualizado correctamente');
@@ -162,18 +175,16 @@ export default function UserManagement() {
         throw new Error(error.error || 'Failed to create user');
       }
 
-      const createdUser = await response.json();
+      await response.json();
       
-      // Reset form and close dialog
       setNewUser({
         email: '',
         full_name: '',
-        role: UserRole.USER,
+        role: 'USER',
         active: true
       });
       setCreateDialog(false);
       
-      // Reload users to show the new user
       loadUsers();
       toast.success('Usuario creado correctamente');
     } catch (error) {
@@ -203,7 +214,6 @@ export default function UserManagement() {
         throw new Error(error.error || 'Failed to delete user');
       }
 
-      // Remove user from local state
       setUsers(users.filter(u => u.id !== deletingUser.id));
       setDeleteDialog(false);
       setDeletingUser(null);
@@ -216,13 +226,13 @@ export default function UserManagement() {
     }
   };
 
-  const getRoleBadgeVariant = (role: UserRole) => {
+  const getRoleBadgeVariant = (role: AllowedRoles) => {
     switch (role) {
-      case UserRole.ADMIN:
+      case 'ADMIN':
         return 'destructive';
-      case UserRole.ORGANIZER:
+      case 'ORGANIZER':
         return 'default';
-      case UserRole.USER:
+      case 'USER':
         return 'secondary';
       default:
         return 'secondary';
@@ -273,9 +283,9 @@ export default function UserManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los roles</SelectItem>
-                  <SelectItem value={UserRole.USER}>Usuario</SelectItem>
-                  <SelectItem value={UserRole.ORGANIZER}>Organizador</SelectItem>
-                  <SelectItem value={UserRole.ADMIN}>Administrador</SelectItem>
+                  <SelectItem value="USER">Usuario</SelectItem>
+                  <SelectItem value="ORGANIZER">Organizador</SelectItem>
+                  <SelectItem value="ADMIN">Administrador</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -431,14 +441,14 @@ export default function UserManagement() {
               
               <div>
                 <Label htmlFor="role">Rol</Label>
-                <Select value={newRole} onValueChange={(value) => setNewRole(value as UserRole)}>
+                <Select value={newRole} onValueChange={(value) => setNewRole(value as AllowedRoles)}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={UserRole.USER}>Usuario</SelectItem>
-                    <SelectItem value={UserRole.ORGANIZER}>Organizador</SelectItem>
-                    <SelectItem value={UserRole.ADMIN}>Administrador</SelectItem>
+                    <SelectItem value="USER">Usuario</SelectItem>
+                    <SelectItem value="ORGANIZER">Organizador</SelectItem>
+                    <SelectItem value="ADMIN">Administrador</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -514,14 +524,14 @@ export default function UserManagement() {
             
             <div>
               <Label htmlFor="role">Rol</Label>
-              <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value as UserRole })}>
+              <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value as AllowedRoles })}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={UserRole.USER}>Usuario</SelectItem>
-                  <SelectItem value={UserRole.ORGANIZER}>Organizador</SelectItem>
-                  <SelectItem value={UserRole.ADMIN}>Administrador</SelectItem>
+                  <SelectItem value="USER">Usuario</SelectItem>
+                  <SelectItem value="ORGANIZER">Organizador</SelectItem>
+                  <SelectItem value="ADMIN">Administrador</SelectItem>
                 </SelectContent>
               </Select>
             </div>
