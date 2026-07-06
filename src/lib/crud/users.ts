@@ -1,11 +1,11 @@
 import { prisma } from '@/lib/db'
-import { User } from '@prisma/client'
+import { User, UserRole } from '@prisma/client'
 
 export interface CreateUserInput {
   email: string
   full_name?: string | null
   avatar_url?: string | null
-  role?: string
+  role?: UserRole
   provider?: string
   provider_id?: string | null
   password_hash?: string | null
@@ -15,7 +15,7 @@ export interface UpdateUserInput {
   email?: string
   full_name?: string | null
   avatar_url?: string | null
-  role?: string
+  role?: UserRole
   provider?: string
   provider_id?: string | null
   password_hash?: string | null
@@ -77,7 +77,7 @@ export class UserCRUD {
     const skip = (page - 1) * limit
 
     const where = {
-      ...(role && { role }),
+      ...(role && { role: role as UserRole }),
       ...(search && {
         OR: [
           { email: { contains: search, mode: 'insensitive' as const } },

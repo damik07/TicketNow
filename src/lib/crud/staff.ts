@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { User } from '@prisma/client'
+import { User, UserRole } from '@prisma/client'
 
 export interface StaffUser {
   id: string
@@ -14,14 +14,14 @@ export interface StaffUser {
 export interface CreateStaffInput {
   email: string
   full_name: string
-  role: string
+  role: UserRole
   password_hash?: string
 }
 
 export interface UpdateStaffInput {
   email?: string
   full_name?: string
-  role?: string
+  role?: UserRole
   active?: boolean
 }
 
@@ -38,7 +38,7 @@ export class StaffCRUD {
 
     const where = {
       active: true,
-      ...(role && { role }),
+      ...(role && { role: role as UserRole }),
       ...(search && {
         OR: [
           { email: { contains: search, mode: 'insensitive' as const } },
@@ -172,36 +172,29 @@ export class StaffCRUD {
     active: number
     inactive: number
   }> {
+    const rolesToCount = ['ADMIN', 'STAFF', 'PRODUCTOR'].map(r => r as UserRole)
     const [total, byRole, active, inactive] = await Promise.all([
       prisma.user.count({
         where: {
-          role: {
-            in: ['admin', 'staff', 'productor'],
-          },
+          role: { in: rolesToCount },
         },
       }),
       prisma.user.groupBy({
         by: ['role'],
         where: {
-          role: {
-            in: ['admin', 'staff', 'productor'],
-          },
+          role: { in: rolesToCount },
         },
         _count: true,
       }),
       prisma.user.count({
         where: {
-          role: {
-            in: ['admin', 'staff', 'productor'],
-          },
+          role: { in: rolesToCount },
           active: true,
         },
       }),
       prisma.user.count({
         where: {
-          role: {
-            in: ['admin', 'staff', 'productor'],
-          },
+          role: { in: rolesToCount },
           active: false,
         },
       }),
@@ -247,7 +240,7 @@ export class StaffCRUD {
     const skip = (page - 1) * limit
 
     const where = {
-      role,
+      role: role as UserRole,
       active: true,
     }
 
