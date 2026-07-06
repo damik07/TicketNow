@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processAdmissions } from '@/lib/queue'
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const { eventId } = await request.json()

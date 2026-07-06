@@ -1,6 +1,8 @@
 // src/app/api/uploadthing/core.ts
 import { createUploadthing, type FileRouter } from "uploadthing/next";
 
+export const dynamic = 'force-dynamic';
+
 const f = createUploadthing();
 
 export const ourFileRouter = {

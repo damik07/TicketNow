@@ -4,6 +4,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import MercadoPagoConfig, { Preference } from "mercadopago";
 
+export const dynamic = 'force-dynamic';
+
 // Inicializamos MercadoPago con tu Access Token de entorno
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADOPAGO_SECRET_KEY || "",

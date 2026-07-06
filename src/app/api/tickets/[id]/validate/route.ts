@@ -6,6 +6,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { normalizeUserRole } from '@/lib/user-role' // 🚀 Cambiado
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: NextRequest, 
   context: any // 💡 Mantenemos para blindar el tipado estricto del build

@@ -5,6 +5,8 @@ import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { processSuccessOrder } from '@/lib/orders/processOrder'
 import { prisma } from '@/lib/db' // 👈 Asegurate de importar tu instancia de Prisma
 
+export const dynamic = 'force-dynamic';
+
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '',
 })
