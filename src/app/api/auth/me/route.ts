@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
-    const { prisma } = await import('@/lib/prisma')
+    const { prisma } = await import('@/lib/db')
     const user = await prisma.user.findUnique({
       where: { email: session.user.email! },
       select: {

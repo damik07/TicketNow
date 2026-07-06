@@ -172,7 +172,7 @@ export class StaffCRUD {
     active: number
     inactive: number
   }> {
-    const rolesToCount = ['ADMIN', 'STAFF', 'PRODUCTOR'].map(r => r as UserRole)
+    const rolesToCount = ['ADMIN', 'ORGANIZER', 'STAFF'].map(r => r as UserRole)
     const [total, byRole, active, inactive] = await Promise.all([
       prisma.user.count({
         where: {
@@ -225,7 +225,7 @@ export class StaffCRUD {
     
     if (!user || !user.active) return false
     
-    return ['admin', 'staff', 'productor'].includes(user.role)
+    return ['ADMIN', 'ORGANIZER', 'STAFF'].includes(user.role)
   }
 
   // Get staff by role

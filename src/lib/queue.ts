@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma'
+import { prisma } from '@/lib/db'
 
 /** Tiempo máximo en checkout (10 minutos). */
 export const QUEUE_SESSION_MS = 10 * 60 * 1000

@@ -299,4 +299,5 @@ enum UserRole {
   USER
   ADMIN
   ORGANIZER
+  STAFF
 }
