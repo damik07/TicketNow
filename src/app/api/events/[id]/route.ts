@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { normalizeUserRole, isAdminRole, normalizeUserRole } from '@/lib/user-role' // 🚀 Cambiado
+import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
 import { parseLocalDate } from "@/utils/date";
 
 interface RouteParams {
