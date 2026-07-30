@@ -31,24 +31,26 @@ model User {
 }
 
 model Organizer {
-  id           String        @id @default(cuid())
-  userId       String        @unique @map("user_id")
-  businessName String        @map("business_name")
-  bankAccount  String?       @map("bank_account")
-  phone        String?
-  logoUrl      String?       @map("logo_url")
-  verified     Boolean       @default(false) @map("verified")
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-  description  String?
-  fiscalId     String?       @map("fiscal_id")
-  events       Event[]
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  staffMembers StaffMember[]
+  id                String        @id @default(cuid())
+  userId            String        @unique @map("user_id")
+  businessName      String        @map("business_name")
+  bankAccount       String?       @map("bank_account")
+  phone             String?
+  logoUrl           String?       @map("logo_url")
+  verified          Boolean       @default(false) @map("verified")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  description       String?
+  fiscalId          String?       @map("fiscal_id")
+  events            Event[]
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  staffMembers      StaffMember[]
 
-  // 🔑 Campo añadido para la vinculación de Split Payments
-  mercadopagoUserId   String?  @map("mercadopago_user_id")
-
+  // 🔑 Campos OAuth para Marketplace / Split Payments
+  mercadopagoUserId       String?   @map("mercadopago_user_id")
+  mercadopagoAccessToken  String?   @map("mercadopago_access_token")
+  mercadopagoRefreshToken String?   @map("mercadopago_refresh_token")
+  mercadopagoExpiresAt    DateTime? @map("mercadopago_expires_at")
 }
 
 model StaffMember {
@@ -147,6 +149,14 @@ model TicketType {
   stockTotal     Int         @map("stock_total")
   stockAvailable Int         @map("stock_available")
   maxPerUser     Int         @default(4) @map("max_per_user")
+
+  ticketsPerBundle     Int          @default(1) // Cantidad de personas que entran con 1 compra
+  // 💡 Lógica de Packs y Vinculación de Aforo
+  isPack               Boolean      @default(false)
+  parentTicketTypeId   String?      // ID del ticket del cual consume aforo (ej. General)
+  parentTicketType     TicketType?  @relation("TicketTypePacks", fields: [parentTicketTypeId], references: [id], onDelete: SetNull)
+  childPacks           TicketType[] @relation("TicketTypePacks")
+
   sortOrder      Int         @default(0) @map("sort_order")
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")

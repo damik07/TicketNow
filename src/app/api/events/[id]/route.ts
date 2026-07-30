@@ -1,34 +1,27 @@
-// ...app\api\events\[id]\route.tx
+// app/api/events/[id]/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
+import { normalizeUserRole, isAdminRole } from '@/lib/user-role'
 import { parseLocalDate } from "@/utils/date";
 
 export const dynamic = 'force-dynamic';
 
-interface RouteParams {
-  params: Promise<{ id: string }> | { id: string }; // Compatible con Next 14 y 15
-}
-
 export async function GET(
   request: NextRequest,
-  context: any // 💡 Usar 'any' o desestructurar de forma asíncrona blinda el Build de Vercel
+  context: any
 ) {
   try {
     const session = await getServerSession(authOptions)
-    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
     const params = await context.params; 
     const id = params.id;
-
 
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Buscamos al usuario organizador
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
@@ -41,14 +34,13 @@ export async function GET(
       return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
     }
 
-    // Buscamos el evento incluyendo sus categorías de tickets
     const event = await prisma.event.findUnique({
       where: {
         id: id,
-        organizerId: organizer.id // Seguridad: solo el dueño puede leerlo para editar
+        organizerId: organizer.id
       },
       include: {
-        ticketTypes: true // Clave para rellenar la sección de entradas en el formulario
+        ticketTypes: true
       }
     })
 
@@ -69,7 +61,6 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions)
-    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
     const params = await context.params; 
     const id = params.id;
     
@@ -77,7 +68,6 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user is an organizer
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
@@ -90,9 +80,6 @@ export async function DELETE(
       return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
     }
 
-    
-
-    // Check if the event belongs to this organizer
     const event = await prisma.event.findUnique({
       where: {
         id: id,
@@ -104,7 +91,6 @@ export async function DELETE(
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
-    // Delete the event (this will also delete related ticket types due to cascade)
     await prisma.event.delete({
       where: { id: id }
     })
@@ -122,9 +108,9 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions)
-    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
     const params = await context.params; 
     const id = params.id;
+
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -141,8 +127,20 @@ export async function PUT(
       return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
     }
 
-    
-    const { title, description, dateTime, endDateTime, locationName, locationAddress, category, bannerUrl, status, ticketTypes, maxConcurrent, queueActive } = await request.json()
+    const { 
+      title, 
+      description, 
+      dateTime, 
+      endDateTime, 
+      locationName, 
+      locationAddress, 
+      category, 
+      bannerUrl, 
+      status, 
+      ticketTypes, 
+      maxConcurrent, 
+      queueActive 
+    } = await request.json()
 
     const existingEvent = await prisma.event.findUnique({
       where: {
@@ -155,32 +153,26 @@ export async function PUT(
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
-    // Calculamos minPrice y totalCapacity de forma dinámica si se actualizaron los tickets
     let minPrice = existingEvent.minPrice;
     let totalCapacity = existingEvent.totalCapacity;
 
     if (ticketTypes && Array.isArray(ticketTypes) && ticketTypes.length > 0) {
       const cleanPrices = ticketTypes.map((t: any) => Number(t.price) || 0);
       minPrice = Math.min(...cleanPrices);
-      totalCapacity = ticketTypes.reduce((sum: number, t: any) => sum + (Number(t.stockTotal) || 0), 0);
+      
+      // Contamos capacidad total sin duplicar stock de packs
+      totalCapacity = ticketTypes
+        .filter((t: any) => !t.is_pack && !t.isPack)
+        .reduce((sum: number, t: any) => sum + (Number(t.stock_total || t.stockTotal) || 0), 0);
     }
 
-    // Usamos una transacción para actualizar el evento y refrescar las entradas
     const updatedEvent = await prisma.$transaction(async (tx) => {
-      // 1. Si se enviaron tipos de ticket, borramos los existentes de este evento primero
-      if (ticketTypes && Array.isArray(ticketTypes)) {
-        await tx.ticketType.deleteMany({
-          where: { eventId: id }
-        })
-      }
-
-      // 2. Actualizamos el evento y creamos los nuevos tipos de ticket simultáneamente
-      return await tx.event.update({
+      // 1. Actualizamos los campos base del evento
+      const evt = await tx.event.update({
         where: { id: id },
         data: {
           title,
           description,
-          // Aplica parseLocalDate para guardar las fechas exactas sin desfases UTC
           dateTime: dateTime ? parseLocalDate(dateTime)! : existingEvent.dateTime,
           endDateTime: endDateTime ? parseLocalDate(endDateTime) : existingEvent.endDateTime,
           locationName,
@@ -192,23 +184,78 @@ export async function PUT(
           ...(maxConcurrent !== undefined && { maxConcurrent: Math.max(1, Number(maxConcurrent) || 50) }),
           ...(queueActive !== undefined && { queueActive: Boolean(queueActive) }),
           status: status || existingEvent.status,
-          ticketTypes: ticketTypes && Array.isArray(ticketTypes) ? {
-            create: ticketTypes.map((tt: any, index: number) => ({
-              name: tt.name,
-              description: tt.description || '',
-              price: Number(tt.price) || 0,
-              stockTotal: Number(tt.stockTotal) || 0,
-              stockAvailable: Number(tt.stockTotal) || 0, // Reinicializa stock con la edición
-              maxPerUser: Number(tt.maxPerUser) || 4,
-              sortOrder: index
-            }))
-          } : undefined
-        },
-        include: {
-          ticketTypes: true
         }
-      })
-    })
+      });
+
+      // 2. Si vienen ticketTypes, regeneramos los tipos de ticket vinculando correctamente
+      if (ticketTypes && Array.isArray(ticketTypes)) {
+        await tx.ticketType.deleteMany({
+          where: { eventId: id }
+        });
+
+        // FASE A: Crear primero los tickets Base (los que no son packs)
+        const baseTicketsMap = new Map<string, string>(); // Guarda relación TempID -> RealID
+
+        for (let i = 0; i < ticketTypes.length; i++) {
+          const tt = ticketTypes[i];
+          const isPack = Boolean(tt.is_pack || tt.isPack);
+
+          if (!isPack) {
+            const createdBase = await tx.ticketType.create({
+              data: {
+                eventId: id,
+                name: tt.name,
+                description: tt.description || '',
+                price: Number(tt.price) || 0,
+                stockTotal: Number(tt.stock_total || tt.stockTotal) || 0,
+                stockAvailable: Number(tt.stock_total || tt.stockTotal) || 0,
+                maxPerUser: Number(tt.max_per_user || tt.maxPerUser) || 4,
+                ticketsPerBundle: 1,
+                isPack: false,
+                sortOrder: i,
+              }
+            });
+
+            // Guardamos identificadores temporales para que los packs puedan hacer referencia
+            const tempKey = tt.id || tt.name || `temp-${i}`;
+            baseTicketsMap.set(tempKey, createdBase.id);
+            baseTicketsMap.set(tt.name, createdBase.id);
+          }
+        }
+
+        // FASE B: Crear los Packs/Combos vinculándolos a su correspondiente Ticket Padre
+        for (let i = 0; i < ticketTypes.length; i++) {
+          const tt = ticketTypes[i];
+          const isPack = Boolean(tt.is_pack || tt.isPack);
+
+          if (isPack) {
+            const rawParentId = tt.parent_ticket_type_id || tt.parentTicketTypeId;
+            const resolvedParentId = rawParentId ? (baseTicketsMap.get(rawParentId) || null) : null;
+
+            await tx.ticketType.create({
+              data: {
+                eventId: id,
+                name: tt.name,
+                description: tt.description || '',
+                price: Number(tt.price) || 0,
+                stockTotal: Number(tt.stock_total || tt.stockTotal) || 0,
+                stockAvailable: Number(tt.stock_total || tt.stockTotal) || 0,
+                maxPerUser: Number(tt.max_per_user || tt.maxPerUser) || 4,
+                ticketsPerBundle: Number(tt.tickets_per_bundle || tt.ticketsPerBundle) || 1,
+                isPack: true,
+                parentTicketTypeId: resolvedParentId,
+                sortOrder: i,
+              }
+            });
+          }
+        }
+      }
+
+      return await tx.event.findUnique({
+        where: { id: id },
+        include: { ticketTypes: true }
+      });
+    });
 
     return NextResponse.json(updatedEvent)
   } catch (error) {
@@ -217,11 +264,9 @@ export async function PUT(
   }
 }
 
-export async function PATCH(request: NextRequest, context: any // 💡 Usar 'any' o desestructurar de forma asíncrona blinda el Build de Vercel
-) {
+export async function PATCH(request: NextRequest, context: any) {
   try {
     const session = await getServerSession(authOptions)
-    // Para asegurarnos total compatibilidad con Next.js, resolvemos los params de forma segura:
     const params = await context.params; 
     const id = params.id;
     
@@ -229,7 +274,6 @@ export async function PATCH(request: NextRequest, context: any // 💡 Usar 'any
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user by email first
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
@@ -239,7 +283,6 @@ export async function PATCH(request: NextRequest, context: any // 💡 Usar 'any
     }
 
     const { packId } = await request.json()
-    
 
     const updatedEvent = await prisma.event.update({
       where: { id: id },

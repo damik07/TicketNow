@@ -10,11 +10,9 @@ import { MercadoPagoConfig, Preference } from 'mercadopago'
 
 export const dynamic = 'force-dynamic';
 
-// Inicializamos el cliente de Mercado Pago
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '',
 })
-
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,7 +25,6 @@ export async function GET(request: NextRequest) {
       where: {
         ...(userId && { userId }),
         ...(eventId && { eventId }),
-        // 2. Si viene un organizerId en la query, filtramos por él en la Base de Datos
         ...(organizerId && {
           event: {
             organizerId: organizerId
@@ -93,7 +90,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1. Traemos el evento incluyendo su paquete (pack) asociado
     const event = await prisma.event.findUnique({
       where: { id: eventId },
       include: { ticketTypes: true, pack: true },
@@ -103,10 +99,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
-    // Obtenemos las configuraciones del paquete (si es absorbido, porcentaje, cargos fijos, etc.)
     const packSlice = packCommissionSliceFromPack(event.pack)
 
-    // Check stock and build server-side prices
     const pricedItems: Array<{
       ticketTypeId: string
       ticketTypeName: string
@@ -130,8 +124,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // La función orderLineBuyerUnitPrice ya calcula si se le suma la comisión 
-      // al usuario o si se mantiene el precio base de la entrada según las reglas del paquete.
       const unitPrice = orderLineBuyerUnitPrice(ticketType.price, ticketType.name, packSlice)
       const subtotal = roundMoney(unitPrice * quantity)
 
@@ -145,12 +137,9 @@ export async function POST(request: NextRequest) {
     }
 
     const totalAmount = roundMoney(pricedItems.reduce((sum, row) => sum + row.subtotal, 0))
-
-    // Validamos si la app está operando en modo simulado o real
     const isSimulated = process.env.NEXT_PUBLIC_PAYMENT_SIMULATED === 'true'
     const finalStatus = isSimulated ? 'aprobado' : 'pendiente'
 
-    // 2. Creamos la orden (Nace 'pendiente' si vamos por pasarela real)
     const order = await prisma.order.create({
       data: {
         userId: session.user.id,
@@ -178,14 +167,18 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Completa la sesión de fila en ambos flujos
+    if (sessionToken) {
+      await completeQueueSession(sessionToken, eventId)
+    }
+
     // ==========================================
     // 💡 CASO A: PAGO REAL CON MERCADO PAGO
     // ==========================================
     if (!isSimulated && paymentMethod === 'mercadopago') {
       const preference = new Preference(mpClient)
-
-      // Generamos la preferencia de pago apuntando a las URLs de tu entorno
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const webhookBaseUrl = process.env.MERCADO_PAGO_WEBHOOK_URL || appUrl
 
       const mpPreference = await preference.create({
         body: {
@@ -193,37 +186,33 @@ export async function POST(request: NextRequest) {
             id: item.ticketTypeId,
             title: `${event.title} - ${item.ticketTypeName}`,
             quantity: item.quantity,
-            unit_price: item.unitPrice, // Precio final calculado con la comisión del paquete integrada
+            unit_price: item.unitPrice,
             currency_id: 'ARS',
           })),
-          external_reference: order.id, // Cruzamos el ID de nuestra Orden para identificarlo en el Webhook
+          external_reference: order.id,
           back_urls: {
             success: `${appUrl}/MisEntradas?status=success`,
             failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
             pending: `${appUrl}/MisEntradas?status=pending`,
           },
           auto_return: 'approved',
-          notification_url: `${process.env.MERCADO_PAGO_WEBHOOK_URL}/api/webhooks/mercadopago`,
+          notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
         },
       })
 
-      // Devolvemos la orden creada en pendiente y el initPoint para redirigir al checkout de MP
       return NextResponse.json({
         order,
         initPoint: mpPreference.init_point,
         packApplied: {
           name: event.pack?.name,
-          // Evaluamos si el modo de aplicar la comisión es deduciéndola (absorbida)
           isAbsorbed: event.pack?.ticketPercentApply === 'DEDUCE_DEL_PRECIO'
         }
       })
     }
 
     // ==========================================
-    // 💡 CASO B: PROCESO SIMULADO (Tu flujo original)
+    // 💡 CASO B: PROCESO SIMULADO
     // ==========================================
-
-    // Decrementar Stock
     for (const item of pricedItems) {
       await prisma.ticketType.update({
         where: { id: item.ticketTypeId },
@@ -233,7 +222,6 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Crear Tickets Físicos inmediatamente
     const createdTickets = []
     for (const item of pricedItems) {
       for (let i = 0; i < item.quantity; i++) {
@@ -274,10 +262,6 @@ export async function POST(request: NextRequest) {
           })
         }
       }
-    }
-
-    if (sessionToken) {
-      await completeQueueSession(sessionToken, eventId)
     }
 
     return NextResponse.json({

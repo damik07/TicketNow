@@ -1,4 +1,4 @@
-// 📄 Ubicación: src/app/Checkout/page.tsx
+// src/components/pages/Checkout.tsx
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react"; // 🚀 Agregado Suspense
@@ -24,14 +24,16 @@ interface Event {
   date_time: string;
   banner_url?: string;
   maxTicketsPerUser?: number;
-  pack?: any; 
+  type?: string;     // 👈 Agregar esto
+  category?: string; // 👈 Agregar esto
+  pack?: any;
 }
 
 interface CheckoutItem {
   ticket_type_id: string;
   ticket_type_name: string;
   quantity: number;
-  unit_price: number; 
+  unit_price: number;
   subtotal: number;
 }
 
@@ -43,7 +45,7 @@ function CheckoutContent() {
   const eventId = searchParams.get("event_id");
 
   const [items, setItems] = useState<CheckoutItem[]>([]);
-  const [timeLeft, setTimeLeft] = useState<string>(""); 
+  const [timeLeft, setTimeLeft] = useState<string>("");
 
   const [user, setUser] = useState<User | null>(null);
   const [event, setEvent] = useState<Event | null>(null);
@@ -166,7 +168,7 @@ function CheckoutContent() {
   const packSlice = event?.pack ? packCommissionSliceFromPack(event.pack) : null;
 
   const finalItems = items.map((item) => {
-    const finalUnitPrice = packSlice 
+    const finalUnitPrice = packSlice
       ? orderLineBuyerUnitPrice(item.unit_price, item.ticket_type_name, packSlice)
       : item.unit_price;
 
@@ -252,7 +254,7 @@ function CheckoutContent() {
           window.sessionStorage.removeItem(`checkout_items_${eventId}`);
           window.sessionStorage.removeItem(`checkout_total_${eventId}`);
         }
-        
+
         setProcessing(false);
         setSuccess(true);
         toast.success("¡Compra simulada con éxito y entradas enviadas por mail!");
@@ -310,8 +312,8 @@ function CheckoutContent() {
         </Button>
 
         {timeLeft && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }} 
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-amber-500/10 border border-amber-500/20 text-amber-400 p-4 rounded-2xl mb-6 flex justify-between items-center text-sm backdrop-blur-sm"
           >
@@ -332,15 +334,29 @@ function CheckoutContent() {
               <h2 className="text-xl font-bold text-white mb-6">Resumen de compra</h2>
 
               {event && (
-                <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-800">
+                <div className="flex items-start gap-4 mb-6 pb-6 border-b border-slate-800">
                   <img
                     src={event.banner_url || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=200&q=80"}
                     alt={event.title}
-                    className="w-16 h-16 rounded-xl object-cover"
+                    className="w-16 h-16 rounded-xl object-cover shrink-0"
                   />
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-semibold text-white">{event.title}</h3>
-                    <p className="text-xs text-slate-500">{event.location_name}</p>
+                    <p className="text-xs text-slate-500 mb-1">{event.location_name}</p>
+
+                    {/* 💡 Badges basados en los campos reales de tu DB */}
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {event.type && (
+                        <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold bg-violet-500/10 text-violet-300 border border-violet-500/20 px-2 py-0.5 rounded-md">
+                          {event.type}
+                        </span>
+                      )}
+                      {event.category && (
+                        <span className="inline-flex items-center text-[10px] capitalize font-medium bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-md">
+                          {event.category}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -411,8 +427,8 @@ function CheckoutContent() {
               <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl p-3 mb-5 flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-violet-400 mt-0.5 shrink-0" />
                 <p className="text-xs text-slate-400">
-                  {process.env.NEXT_PUBLIC_PAYMENT_SIMULATED === 'true' 
-                    ? "Entorno de pruebas activo (Pago Simulado)." 
+                  {process.env.NEXT_PUBLIC_PAYMENT_SIMULATED === 'true'
+                    ? "Entorno de pruebas activo (Pago Simulado)."
                     : "Serás redirigido de forma segura a Mercado Pago."}
                 </p>
               </div>

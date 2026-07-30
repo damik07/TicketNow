@@ -3,63 +3,66 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MercadoPagoConfig, Payment } from 'mercadopago'
 import { processSuccessOrder } from '@/lib/orders/processOrder'
-import { prisma } from '@/lib/db' // 👈 Asegurate de importar tu instancia de Prisma
+import { prisma } from '@/lib/db'
 
 export const dynamic = 'force-dynamic';
 
-const mpClient = new MercadoPagoConfig({
-  accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '',
+const platformClient = new MercadoPagoConfig({
+  accessToken: process.env.MERCADOPAGO_SECRET_KEY || process.env.MERCADO_PAGO_ACCESS_TOKEN || '',
 })
 
 export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const type = searchParams.get('type') || searchParams.get('topic')
-    const dataId = searchParams.get('data.id') || searchParams.get('id')
+    
+    // 1. Parsear id y type tanto de Query Params como del JSON Body (Compatibilidad MP V2)
+    let type = searchParams.get('type') || searchParams.get('topic')
+    let dataId = searchParams.get('data.id') || searchParams.get('id')
 
+    if (!dataId) {
+      try {
+        const body = await request.json()
+        type = type || body.type || (body.action?.includes('payment') ? 'payment' : null)
+        dataId = body.data?.id || body.id
+      } catch {
+        // Ignoramos error de parseo si venía sin body
+      }
+    }
+
+    // Si no es un evento de pago o no tenemos ID, respondemos 200 para que MP no reintente
     if (type !== 'payment' || !dataId) {
       return NextResponse.json({ received: true }, { status: 200 })
     }
 
-    const paymentClient = new Payment(mpClient)
-    const paymentData = await paymentClient.get({ id: dataId })
-
-    // 🚨 1. DETECCIÓN CRÍTICA: ¿Es un pago de diferencia de saldo en la barra?
-    const metadata = paymentData.metadata
+    const paymentClient = new Payment(platformClient)
+    let paymentData;
     
+    try {
+      paymentData = await paymentClient.get({ id: dataId });
+    } catch (err) {
+      console.error(`[MP Webhook] No se pudo obtener el pago ${dataId}:`, err);
+      return NextResponse.json({ received: true, warning: 'Payment fetch failed' }, { status: 200 });
+    }
+
+    const metadata = paymentData.metadata;
+
+    // =========================================================================
+    // 🍹 1. DETECCIÓN: Pagos de Consumiciones / Diferencia de Saldo en Barra
+    // =========================================================================
     if (metadata && metadata.es_diferencia_consumo) {
       if (paymentData.status === 'approved') {
         const ticketId = metadata.ticket_id
         const montoPagadoMP = paymentData.transaction_amount || 0
 
-        console.log(`[MP Webhook] Procesando cobro mixto en barra para Ticket ID: ${ticketId} por $${montoPagadoMP}`)
-
         await prisma.$transaction(async (tx) => {
-          // Buscamos el ticket para extraer la deducción solicitada por el staff y el balance actual
-          const ticket = await tx.ticket.findUnique({
-            where: { id: ticketId }
-          })
-
-          if (!ticket) {
-            throw new Error(`Ticket ${ticketId} no encontrado en base de datos.`)
-          }
-
-          if (ticket.usageStatus !== "esperando_confirmacion") {
-            console.warn(`[MP Webhook] El ticket ${ticketId} ya cambió de estado (${ticket.usageStatus}). Cancelando duplicación.`)
-            return
-          }
+          const ticket = await tx.ticket.findUnique({ where: { id: ticketId } })
+          if (!ticket || ticket.usageStatus !== "esperando_confirmacion") return
 
           const totalADebitar = ticket.pendingDeduction || 0
           const saldoViejo = ticket.consumptionBalance || 0
-
-          // Lógica: (Saldo Actual + Lo pagado en MP) - Lo consumido
-          // Al ser el pago de MP idéntico a la diferencia, el saldo final tiende al remanente correcto o $0
           const nuevoSaldoFinal = (saldoViejo + montoPagadoMP) - totalADebitar
-          
-          // Inteligencia de estados: Si se consumió todo el saldo inicial pasa a 'consumido', sino queda como 'parcial'
           const estadoFinal = nuevoSaldoFinal <= 0 ? "consumido" : "parcial"
 
-          // Actualizamos el ticket liberando los campos pendientes
           await tx.ticket.update({
             where: { id: ticket.id },
             data: {
@@ -71,7 +74,6 @@ export async function POST(request: NextRequest) {
             }
           })
 
-          // Insertamos la auditoría histórica de consumición
           await tx.consumptionTransaction.create({
             data: {
               ticketId: ticket.id,
@@ -87,28 +89,38 @@ export async function POST(request: NextRequest) {
             }
           })
         })
-
-        console.log(`[MP Webhook] Cobro de barra procesado con éxito para Ticket ${ticketId}`)
       }
 
-      // Respondemos 200 a MP para cerrar la notificación de barra
       return NextResponse.json({ success: true, message: 'Diferencia de consumo procesada' }, { status: 200 })
     }
 
     // =========================================================================
-    // 🎟️ FLUJO CONVENCIONAL: Compra de Entradas (Código Original)
+    // 🎟️ 2. FLUJO CONVENCIONAL: Venta de Entradas
     // =========================================================================
-    const orderId = paymentData.external_reference
+    const orderId = paymentData.external_reference || metadata?.order_id;
 
     if (!orderId) {
-      console.error(`[MP Webhook] Notificación sin external_reference ni metadata de barra para el pago: ${dataId}`)
+      console.error(`[MP Webhook] Pago ${dataId} sin external_reference ni order_id`)
       return NextResponse.json({ error: 'Missing external reference' }, { status: 400 })
     }
 
-    // Si está aprobado en Mercado Pago, disparamos nuestro helper unificado de entradas
     if (paymentData.status === 'approved') {
-      await processSuccessOrder(orderId)
-      console.log(`[MP Webhook] Orden de entradas ${orderId} procesada y mail enviado via helper.`)
+      const existingOrder = await prisma.order.findUnique({
+        where: { id: orderId }
+      });
+
+      // Verificamos por paymentStatus === 'pendiente' (compatible con la creación en route.ts)
+      if (existingOrder && existingOrder.paymentStatus !== 'aprobado') {
+        // Actualizamos estado de pago en la orden
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { paymentStatus: 'aprobado' }
+        });
+
+        // Ejecuta la emisión de QRs y lógica final
+        await processSuccessOrder(orderId);
+        console.log(`[MP Webhook] Orden ${orderId} aprobada correctamente.`);
+      }
     }
 
     return NextResponse.json({ success: true }, { status: 200 })

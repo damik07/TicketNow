@@ -132,7 +132,10 @@ export async function POST(request: NextRequest) {
       description: t.description || '',
       price: Number(t.price) || 0,
       stockTotal: Number(t.stockTotal) || 0,
-      maxPerUser: Number(t.maxPerUser) || 4
+      maxPerUser: Number(t.maxPerUser) || 4,
+      ticketsPerBundle: Number(t.ticketsPerBundle) || 1, // 👈 [NUEVO]
+      isPack: Boolean(t.isPack),                        // 👈 [NUEVO]
+      parentTicketTypeId: t.parentTicketTypeId || null, // 👈 [NUEVO]
     }))
 
     // Ahora calculamos de forma 100% segura sobre el array limpio
@@ -165,6 +168,9 @@ export async function POST(request: NextRequest) {
             stockTotal: t.stockTotal,
             stockAvailable: t.stockTotal, // Inicializa con el total
             maxPerUser: t.maxPerUser,
+            ticketsPerBundle: t.ticketsPerBundle, // 👈 [NUEVO]
+            isPack: t.isPack,                     // 👈 [NUEVO]
+            parentTicketTypeId: t.parentTicketTypeId, // 👈 [NUEVO]
             sortOrder: index,
           }))
         }

@@ -1,33 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-
-export const dynamic = 'force-dynamic';
+// app/api/organizers/mp-auth-url/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
-    const organizerId = searchParams.get("organizerId");
+    const organizerId = searchParams.get('organizerId');
 
     if (!organizerId) {
-      return NextResponse.json({ error: "organizerId es requerido" }, { status: 400 });
+      return NextResponse.json({ error: 'organizerId es requerido' }, { status: 400 });
     }
 
     const clientId = process.env.MERCADO_PAGO_CLIENT_ID;
-    const redirectUri = encodeURIComponent(process.env.MERCADO_PAGO_REDIRECT_URI!);
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const redirectUri = encodeURIComponent(`${appUrl}/api/organizers/mp-callback`);
+    
+    // Enviamos organizerId en el parámetro state para reconocerlo al volver
+    const authUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${organizerId}&redirect_uri=${redirectUri}`;
 
-    // Armamos la URL oficial de OAuth. 
-    // Usamos 'state' para transportar el ID del organizador de manera segura a través del flujo.
-    const mpAuthUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${organizerId}&redirect_uri=${redirectUri}`;
-
-    return NextResponse.json({ url: mpAuthUrl });
+    return NextResponse.json({ url: authUrl });
   } catch (error) {
-    console.error("Error al generar MP auth URL:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error('[MP Auth URL Error]:', error);
+    return NextResponse.json({ error: 'Error al generar URL de autorización' }, { status: 500 });
   }
 }

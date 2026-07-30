@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, Save, ArrowLeft, Loader2, CheckCircle2, Ticket, MapPin, Video, Search } from "lucide-react";
+import { Plus, Trash2, Save, ArrowLeft, Loader2, CheckCircle2, Ticket, MapPin, Video, Search, Link2, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -48,11 +48,15 @@ interface Event {
 }
 
 interface TicketType {
+  id?: string;
   name: string;
   description: string;
   price: number;
   stock_total: number;
   max_per_user?: number;
+  tickets_per_bundle?: number;
+  is_pack?: boolean;
+  parent_ticket_type_id?: string | null;
 }
 
 const CATEGORIES = [
@@ -247,7 +251,10 @@ function FormularioEvento() {
   }, [isLoadingAuth, isAuthenticated, user, router, loadData, organizer]);
 
   const addTicketType = () => {
-    setTicketTypes((prev) => [...prev, { name: "", description: "", price: 0, stock_total: 50, max_per_user: 4 }]);
+    setTicketTypes((prev) => [
+      ...prev, 
+      { name: "", description: "", price: 0, stock_total: 50, max_per_user: 4, tickets_per_bundle: 1, is_pack: false, parent_ticket_type_id: null }
+    ]);
   };
 
   const removeTicketType = (index: number) => {
@@ -258,52 +265,34 @@ function FormularioEvento() {
     setTicketTypes((prev) => {
       const copy = [...prev];
       copy[index] = { ...copy[index], [field]: value };
+      
+      // Si desmarca la opción de pack, reseteamos a valores individuales
+      if (field === "is_pack" && !value) {
+        copy[index].tickets_per_bundle = 1;
+        copy[index].parent_ticket_type_id = null;
+      }
       return copy;
     });
   };
 
   const handleSave = async () => {
     if (!organizer) return;
-
-    if (!event.title.trim() || !event.date_time) {
-      toast.error("Por favor, completa los campos requeridos");
-      return;
-    }
-    if (event.type === "PRESENCIAL" && !event.location_name.trim()) {
-      toast.error("El nombre del lugar físico es obligatorio");
-      return;
-    }
-    if (event.type === "STREAMING" && !event.streaming_url.trim()) {
-      toast.error("La URL de streaming es obligatoria");
-      return;
-    }
-
     setSaving(true);
 
     try {
       const eventData = {
-        title: event.title,
-        description: event.description,
-        dateTime: event.date_time,
-        endDateTime: event.end_date_time,
-        type: event.type,
-        locationName: event.type === "PRESENCIAL" ? event.location_name : "Transmisión en Vivo",
-        locationAddress: event.type === "PRESENCIAL" ? event.location_address : "Virtual",
-        latitude: event.type === "PRESENCIAL" ? event.latitude : null,
-        longitude: event.type === "PRESENCIAL" ? event.longitude : null,
-        streamingUrl: event.type === "STREAMING" ? event.streaming_url : null,
-        streamingKey: event.type === "STREAMING" ? event.streaming_key : null,
-        category: event.category,
-        bannerUrl: event.banner_url,
-        status: event.status,
+        ...event,
         maxConcurrent: Math.max(1, Number(event.max_concurrent) || 50),
-        queueActive: event.queue_active,
         ticketTypes: ticketTypes.map(tt => ({
+          id: tt.id,
           name: tt.name,
           description: tt.description,
           price: tt.price,
           stockTotal: tt.stock_total,
           maxPerUser: tt.max_per_user || 4,
+          ticketsPerBundle: tt.is_pack ? (tt.tickets_per_bundle || 1) : 1,
+          isPack: tt.is_pack || false,
+          parentTicketTypeId: tt.is_pack ? tt.parent_ticket_type_id : null,
         }))
       };
 
@@ -311,13 +300,12 @@ function FormularioEvento() {
       const method = isEditMode ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
-        method: method,
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(eventData),
       });
 
       const data = await response.json();
-
       if (data.error) {
         toast.error(data.error);
         setSaving(false);
@@ -327,10 +315,6 @@ function FormularioEvento() {
       setSaving(false);
       setSuccess(true);
       toast.success(isEditMode ? "Evento actualizado" : "Evento creado exitosamente");
-
-      setTimeout(() => {
-        router.push('/DashboardVentas');
-      }, 2000);
     } catch (error) {
       console.error('Error saving event:', error);
       setSaving(false);
@@ -632,51 +616,137 @@ function FormularioEvento() {
             </div>
           </motion.div>
 
-          {/* Tipos de Entrada */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Ticket className="w-5 h-5 text-violet-400" /> Tipos de Entrada
-              </h3>
-              <Button variant="outline" size="sm" onClick={addTicketType} className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1">
-                <Plus className="w-3 h-3" /> Agregar
-              </Button>
-            </div>
+          {/* Tipos de Entrada con Vinculación de Stock */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6 mb-6">
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Ticket className="w-5 h-5 text-violet-400" /> Tipos de Entrada y Combos
+            </h3>
+            <Button variant="outline" size="sm" onClick={addTicketType} className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1">
+              <Plus className="w-3 h-3" /> Agregar
+            </Button>
+          </div>
 
-            <div className="space-y-4">
-              {ticketTypes.map((tt, i) => (
-                <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs text-slate-500 font-medium">Tipo {i + 1}</span>
-                    {ticketTypes.length > 1 && (
-                      <button onClick={() => removeTicketType(i)} className="text-red-400 hover:text-red-300">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+          <div className="space-y-4">
+            {ticketTypes.map((tt, i) => {
+              // Filtrar tickets elegibles para ser "Padre" (los que no son packs)
+              const availableParents = ticketTypes.filter((_, index) => index !== i && !ticketTypes[index].is_pack);
+
+              return (
+                <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-medium flex items-center gap-2">
+                      Tipo {i + 1}
+                      {tt.is_pack && (
+                        <span className="bg-violet-500/20 text-violet-300 text-[10px] px-2 py-0.5 rounded-full border border-violet-500/30 font-semibold">
+                          Combo / Pack
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor={`pack-switch-${i}`} className="text-xs text-slate-400 cursor-pointer">¿Es un Pack?</Label>
+                        <Switch
+                          id={`pack-switch-${i}`}
+                          checked={tt.is_pack || false}
+                          onCheckedChange={(v) => updateTicketType(i, "is_pack", v)}
+                        />
+                      </div>
+                      {ticketTypes.length > 1 && (
+                        <button onClick={() => removeTicketType(i)} className="text-red-400 hover:text-red-300">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div>
                       <Label className="text-slate-500 text-xs mb-1 block">Nombre</Label>
-                      <Input value={tt.name} onChange={(e) => updateTicketType(i, "name", e.target.value)} placeholder="General, VIP..." className="bg-slate-900/50 border-slate-700 text-white text-sm" />
+                      <Input value={tt.name} onChange={(e) => updateTicketType(i, "name", e.target.value)} placeholder="Ej: General, Pack 4x3..." className="bg-slate-900/50 border-slate-700 text-white text-sm" />
                     </div>
                     <div>
-                      <Label className="text-slate-500 text-xs mb-1 block">Precio ($)</Label>
+                      <Label className="text-slate-500 text-xs mb-1 block">Precio Total ($)</Label>
                       <Input type="number" value={tt.price} onChange={(e) => updateTicketType(i, "price", parseFloat(e.target.value) || 0)} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
                     </div>
+                    
+                    {tt.is_pack ? (
+                      <div>
+                        <Label className="text-slate-500 text-xs mb-1 block flex items-center gap-1">
+                          <Users className="w-3 h-3 text-violet-400" /> Personas por Pack
+                        </Label>
+                        <Input 
+                          type="number" 
+                          min={2} 
+                          value={tt.tickets_per_bundle || 2} 
+                          onChange={(e) => updateTicketType(i, "tickets_per_bundle", Math.max(2, parseInt(e.target.value, 10) || 2))} 
+                          className="bg-slate-900/50 border-violet-500/30 text-white text-sm focus-visible:ring-violet-500" 
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <Label className="text-slate-500 text-xs mb-1 block">Stock Total</Label>
+                        <Input type="number" value={tt.stock_total} onChange={(e) => updateTicketType(i, "stock_total", parseInt(e.target.value) || 0)} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
+                      </div>
+                    )}
+
                     <div>
-                      <Label className="text-slate-500 text-xs mb-1 block">Stock total</Label>
-                      <Input type="number" value={tt.stock_total} onChange={(e) => updateTicketType(i, "stock_total", parseInt(e.target.value) || 0)} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
-                    </div>
-                    <div>
-                      <Label className="text-slate-500 text-xs mb-1 block">Máx. por persona</Label>
+                      <Label className="text-slate-500 text-xs mb-1 block">Máx. por usuario</Label>
                       <Input type="number" value={tt.max_per_user || 4} onChange={(e) => updateTicketType(i, "max_per_user", parseInt(e.target.value) || 1)} min={1} max={20} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
                     </div>
                   </div>
+
+                  {/* 💡 LÓGICA DE VINCULACIÓN DE STOCK SI ES UN PACK */}
+                  {tt.is_pack && (
+                    <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                      <div>
+                        <Label className="text-xs text-slate-400 mb-1.5 flex items-center gap-1">
+                          <Link2 className="w-3.5 h-3.5 text-violet-400" /> Consumo de Aforo / Stock
+                        </Label>
+                        <Select 
+                          value={tt.parent_ticket_type_id || "independent"} 
+                          onValueChange={(val) => updateTicketType(i, "parent_ticket_type_id", val === "independent" ? null : val)}
+                        >
+                          <SelectTrigger className="bg-slate-900/60 border-slate-700 text-slate-200 text-xs">
+                            <SelectValue placeholder="Seleccionar cómo descuenta stock" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-slate-800">
+                            <SelectItem value="independent">
+                              📦 Stock Propio e Independiente (Lote exclusivo de packs)
+                            </SelectItem>
+                            {availableParents.map((p, pIndex) => (
+                              <SelectItem key={pIndex} value={p.id || p.name || `temp-${pIndex}`}>
+                                🔗 Descontar del stock de: {p.name || `Entrada ${pIndex + 1}`} ({p.stock_total} disp.)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {tt.parent_ticket_type_id ? (
+                        <p className="text-[11px] text-violet-300/80 font-mono bg-violet-950/30 p-2 rounded border border-violet-900/30">
+                          ✨ Cada venta de este pack descontará <strong>{tt.tickets_per_bundle} entradas</strong> directamente del stock principal del sector seleccionado.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-slate-500 text-xs mb-1 block">Límite de Packs a vender</Label>
+                            <Input 
+                              type="number" 
+                              value={tt.stock_total} 
+                              onChange={(e) => updateTicketType(i, "stock_total", parseInt(e.target.value) || 0)} 
+                              className="bg-slate-900/50 border-slate-700 text-white text-sm" 
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </motion.div>
+              );
+            })}
+          </div>
+        </motion.div>
 
           {/* Guardar */}
           <Button
