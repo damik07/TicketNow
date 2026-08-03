@@ -73,7 +73,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             {/* Logo en Navbar */}
             <Link href="/" className="flex items-center group">
               <Image
-                src="/logo-ticketnow-para-web.svg" // Cambia esta ruta si lo guardaste en public/images/logo-ticketnow-para-web.svg
+                src="/logo-ticketnow-para-web.png" // Cambia esta ruta si lo guardaste en public/images/logo-ticketnow-para-web.svg
                 alt={APP_NAME}
                 width={180}
                 height={48}
@@ -296,7 +296,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
               {/* Logo en Footer */}
               <div className="flex items-center mb-4">
                 <Image
-                  src="/logo-ticketnow-para-web.svg"
+                  src="/logo-ticketnow-para-web.png"
                   alt={APP_NAME}
                   width={160}
                   height={40}
