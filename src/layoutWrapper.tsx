@@ -75,10 +75,9 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
               <Image
                 src="/logo-ticketnow-para-web.png" // Cambia esta ruta si lo guardaste en public/images/logo-ticketnow-para-web.svg
                 alt={APP_NAME}
-                width={180}
-                height={48}
+                
                 priority // Carga inmediata sin delay al ser el elemento principal arriba
-                className="h-8 md:h-9 w-auto object-contain group-hover:opacity-90 transition-opacity"
+                className="h-10 md:h-12 w-auto object-contain group-hover:opacity-90 transition-opacity"
               />
             </Link>
 
@@ -298,9 +297,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                 <Image
                   src="/logo-ticketnow-para-web.png"
                   alt={APP_NAME}
-                  width={160}
-                  height={40}
-                  className="h-8 w-auto object-contain"
+                  className="h-11 md:h-12 w-auto object-contain"
                 />
               </div>
               <p className="text-sm text-slate-500">
