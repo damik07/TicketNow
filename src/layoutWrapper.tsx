@@ -69,8 +69,9 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-slate-950/95 backdrop-blur-xl border-b border-slate-800/50 shadow-2xl" : "bg-transparent"
         }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 lg:h-20">
-            {/* Logo en Navbar */}
+          <div className="flex items-center justify-between h-16 lg:h-20 gap-4">
+
+            {/* Logo en Navbar (NUNCA se encoge) */}
             <Link href="/" className="flex items-center group shrink-0">
               <Image
                 src="/logo-ticketnow-para-web.png"
@@ -82,12 +83,12 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
               />
             </Link>
 
-            {/* Desktop Nav */}
-            <div className="hidden lg:flex items-center gap-1 min-w-0 flex-shrink">
+            {/* Desktop Nav - Enlaces públicos */}
+            <div className="hidden xl:flex items-center gap-1">
               {isAuthenticated && isPlainUser && (
                 <Link
                   href={createPageUrl("SerOrganizador")}
-                  className="px-3 xl:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-violet-400 hover:text-violet-300 hover:bg-violet-500/5 whitespace-nowrap"
+                  className="px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-violet-400 hover:text-violet-300 hover:bg-violet-500/5 whitespace-nowrap"
                 >
                   Ser Organizador
                 </Link>
@@ -96,7 +97,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                 <Link
                   key={page}
                   href={createPageUrl(page)}
-                  className={`px-3 xl:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${currentPageName === page
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${currentPageName === page
                     ? "text-white bg-white/10"
                     : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
@@ -106,63 +107,82 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
               ))}
             </div>
 
-            {/* Right Side */}
-            <div className="hidden lg:flex items-center gap-1.5 xl:gap-3 shrink-0">
+            {/* Right Side - Acciones del usuario */}
+            <div className="hidden xl:flex items-center gap-2 shrink-0">
               {isAuthenticated && user ? (
-                <div className="flex items-center gap-1.5 xl:gap-3">
-                  {isAdmin && (
-                    <>
-                      <Link href="/admin">
-                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300 gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
-                          <Users className="w-4 h-4" />
-                          <span>Admin</span>
-                        </Button>
-                      </Link>
-                      <Link href="/AdminPacks">
-                        <Button variant="ghost" size="sm" className="text-amber-400 hover:text-amber-300 gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
-                          <Package className="w-4 h-4" />
-                          <span>Packs</span>
-                        </Button>
-                      </Link>
-                    </>
-                  )}
-                  {isProducer && (
-                    <>
-                      <Link href={createPageUrl("CrearEvento")}>
-                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
-                          <CalendarPlus className="w-4 h-4" />
-                          <span className="hidden xl:inline">Crear Evento</span>
-                          <span className="xl:hidden">Crear</span>
-                        </Button>
-                      </Link>
-                      <Link href={createPageUrl("DashboardVentas")}>
-                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
+                <div className="flex items-center gap-2">
+
+                  {/* Menú de Gestión / Productor / Admin agrupaditos */}
+                  {(isAdmin || isProducer) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="gap-2 text-violet-400 hover:text-violet-300 hover:bg-violet-500/10">
                           <LayoutDashboard className="w-4 h-4" />
-                          <span className="hidden xl:inline">Dashboard</span>
+                          <span>Gestión</span>
+                          <ChevronDown className="w-3 h-3" />
                         </Button>
-                      </Link>
-                      <Link href={createPageUrl("GestionStaff")}>
-                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
-                          <UserCog className="w-4 h-4" />
-                          <span className="hidden xl:inline">Staff</span>
-                        </Button>
-                      </Link>
-                    </>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52 bg-slate-900 border-slate-800 text-white">
+                        {isAdmin && (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              Administración
+                            </div>
+                            <DropdownMenuItem asChild>
+                              <Link href="/admin" className="gap-2 text-red-400 cursor-pointer">
+                                <Users className="w-4 h-4" /> Panel Admin
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href="/AdminPacks" className="gap-2 text-amber-400 cursor-pointer">
+                                <Package className="w-4 h-4" /> Admin Packs
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator className="bg-slate-800" />
+                          </>
+                        )}
+                        {isProducer && (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              Organización
+                            </div>
+                            <DropdownMenuItem asChild>
+                              <Link href={createPageUrl("CrearEvento")} className="gap-2 cursor-pointer">
+                                <CalendarPlus className="w-4 h-4" /> Crear Evento
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={createPageUrl("DashboardVentas")} className="gap-2 cursor-pointer">
+                                <LayoutDashboard className="w-4 h-4" /> Dashboard Ventas
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={createPageUrl("GestionStaff")} className="gap-2 cursor-pointer">
+                                <UserCog className="w-4 h-4" /> Gestión Staff
+                              </Link>
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
+
+                  {/* Botón directo a Mis Entradas */}
                   <Link href={createPageUrl("MisEntradas")}>
-                    <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
+                    <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white gap-2">
                       <Ticket className="w-4 h-4" />
-                      <span className="hidden xl:inline">Mis Entradas</span>
+                      <span>Mis Entradas</span>
                     </Button>
                   </Link>
 
+                  {/* Menú de Perfil de usuario */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="gap-2 text-slate-300 px-2 xl:px-3">
+                      <Button variant="ghost" size="sm" className="gap-2 text-slate-300">
                         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-xs font-bold shrink-0">
                           {user.full_name?.[0]?.toUpperCase() || "U"}
                         </div>
-                        <span className="max-w-[80px] xl:max-w-[100px] truncate">{user.full_name || "Usuario"}</span>
+                        <span className="max-w-[110px] truncate">{user.full_name || "Usuario"}</span>
                         <ChevronDown className="w-3 h-3" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -198,15 +218,16 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             </div>
 
             {/* Mobile Toggle */}
-            <button className="lg:hidden p-2 text-slate-400" onClick={() => setMobileOpen(!mobileOpen)}>
+            <button className="xl:hidden p-2 text-slate-400" onClick={() => setMobileOpen(!mobileOpen)}>
               {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
+
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile Menu (se activa en pantallas menores a xl) */}
         {mobileOpen && (
-          <div className="lg:hidden bg-slate-950 border-t border-slate-800">
+          <div className="xl:hidden bg-slate-950 border-t border-slate-800">
             <div className="p-4 space-y-1">
               {isAuthenticated && isPlainUser && (
                 <Link
