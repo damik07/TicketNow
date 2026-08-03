@@ -71,22 +71,23 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
             {/* Logo en Navbar */}
-            <Link href="/" className="flex items-center group">
+            <Link href="/" className="flex items-center group shrink-0">
               <Image
-                src="/logo-ticketnow-para-web.png" // Cambia esta ruta si lo guardaste en public/images/logo-ticketnow-para-web.svg
+                src="/logo-ticketnow-para-web.png"
                 alt={APP_NAME}
-                
-                priority // Carga inmediata sin delay al ser el elemento principal arriba
-                className="h-10 md:h-12 w-auto object-contain group-hover:opacity-90 transition-opacity"
+                width={200}
+                height={50}
+                priority
+                className="h-9 sm:h-10 md:h-12 w-auto object-contain group-hover:opacity-90 transition-opacity"
               />
             </Link>
 
             {/* Desktop Nav */}
-            <div className="hidden lg:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-1 min-w-0 flex-shrink">
               {isAuthenticated && isPlainUser && (
                 <Link
                   href={createPageUrl("SerOrganizador")}
-                  className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-violet-400 hover:text-violet-300 hover:bg-violet-500/5"
+                  className="px-3 xl:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 text-violet-400 hover:text-violet-300 hover:bg-violet-500/5 whitespace-nowrap"
                 >
                   Ser Organizador
                 </Link>
@@ -95,7 +96,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                 <Link
                   key={page}
                   href={createPageUrl(page)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${currentPageName === page
+                  className={`px-3 xl:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${currentPageName === page
                     ? "text-white bg-white/10"
                     : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
@@ -106,21 +107,21 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             </div>
 
             {/* Right Side */}
-            <div className="hidden lg:flex items-center gap-3">
+            <div className="hidden lg:flex items-center gap-1.5 xl:gap-3 shrink-0">
               {isAuthenticated && user ? (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 xl:gap-3">
                   {isAdmin && (
                     <>
                       <Link href="/admin">
-                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300 gap-2">
+                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300 gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
                           <Users className="w-4 h-4" />
-                          Admin
+                          <span>Admin</span>
                         </Button>
                       </Link>
                       <Link href="/AdminPacks">
-                        <Button variant="ghost" size="sm" className="text-amber-400 hover:text-amber-300 gap-2">
+                        <Button variant="ghost" size="sm" className="text-amber-400 hover:text-amber-300 gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
                           <Package className="w-4 h-4" />
-                          Packs
+                          <span>Packs</span>
                         </Button>
                       </Link>
                     </>
@@ -128,39 +129,40 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                   {isProducer && (
                     <>
                       <Link href={createPageUrl("CrearEvento")}>
-                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-2">
+                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
                           <CalendarPlus className="w-4 h-4" />
-                          Crear Evento
+                          <span className="hidden xl:inline">Crear Evento</span>
+                          <span className="xl:hidden">Crear</span>
                         </Button>
                       </Link>
                       <Link href={createPageUrl("DashboardVentas")}>
-                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-2">
+                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
                           <LayoutDashboard className="w-4 h-4" />
-                          Dashboard
+                          <span className="hidden xl:inline">Dashboard</span>
                         </Button>
                       </Link>
                       <Link href={createPageUrl("GestionStaff")}>
-                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-2">
+                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
                           <UserCog className="w-4 h-4" />
-                          Staff
+                          <span className="hidden xl:inline">Staff</span>
                         </Button>
                       </Link>
                     </>
                   )}
                   <Link href={createPageUrl("MisEntradas")}>
-                    <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-2">
+                    <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 px-2 xl:px-3 text-xs xl:text-sm">
                       <Ticket className="w-4 h-4" />
-                      Mis Entradas
+                      <span className="hidden xl:inline">Mis Entradas</span>
                     </Button>
                   </Link>
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="gap-2 text-slate-300">
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-xs font-bold">
+                      <Button variant="ghost" size="sm" className="gap-2 text-slate-300 px-2 xl:px-3">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-xs font-bold shrink-0">
                           {user.full_name?.[0]?.toUpperCase() || "U"}
                         </div>
-                        <span className="max-w-[100px] truncate">{user.full_name || "Usuario"}</span>
+                        <span className="max-w-[80px] xl:max-w-[100px] truncate">{user.full_name || "Usuario"}</span>
                         <ChevronDown className="w-3 h-3" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -297,6 +299,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                 <Image
                   src="/logo-ticketnow-para-web.png"
                   alt={APP_NAME}
+                  width={200}
+                  height={50}
                   className="h-11 md:h-12 w-auto object-contain"
                 />
               </div>
