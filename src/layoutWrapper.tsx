@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPageUrl } from "@/utils";
+import Image from 'next/image';
 
 import { Button } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/appConfig";
@@ -69,14 +70,16 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 lg:h-20">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 group">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-500/20 group-hover:shadow-violet-500/40 transition-shadow">
-                <Zap className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-                {APP_NAME}
-              </span>
+            {/* Logo en Navbar */}
+            <Link href="/" className="flex items-center group">
+              <Image
+                src="/public/images/logo-ticketnow-para-web.svg" // Cambia esta ruta si lo guardaste en public/images/logo-ticketnow-para-web.svg
+                alt={APP_NAME}
+                width={180}
+                height={48}
+                priority // Carga inmediata sin delay al ser el elemento principal arriba
+                className="h-8 md:h-9 w-auto object-contain group-hover:opacity-90 transition-opacity"
+              />
             </Link>
 
             {/* Desktop Nav */}
@@ -94,8 +97,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                   key={page}
                   href={createPageUrl(page)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${currentPageName === page
-                      ? "text-white bg-white/10"
-                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                    ? "text-white bg-white/10"
+                    : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
                 >
                   {LANDING_LABELS[page]}
@@ -290,11 +293,15 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="md:col-span-1">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-                  <Zap className="w-4 h-4 text-white" />
-                </div>
-                <span className="text-lg font-bold">{APP_NAME}</span>
+              {/* Logo en Footer */}
+              <div className="flex items-center mb-4">
+                <Image
+                  src="/public/images/logo-ticketnow-para-web.svg"
+                  alt={APP_NAME}
+                  width={160}
+                  height={40}
+                  className="h-8 w-auto object-contain"
+                />
               </div>
               <p className="text-sm text-slate-500">
                 La plataforma para los mejores eventos.
