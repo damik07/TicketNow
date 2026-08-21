@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
   const organizerId = searchParams.get('state');
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app';
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app').replace(/\/$/, '');
 
   if (!code || !organizerId) {
     return NextResponse.redirect(`${appUrl}/dashboard?mp_error=invalid_callback`);
@@ -17,13 +17,18 @@ export async function GET(request: NextRequest) {
   try {
     const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
     const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
-    const redirectUri = `${appUrl}/api/organizers/mp-callback`.trim();
+    const redirectUri = `${appUrl}/api/organizers/mp-callback`;
 
+    // 1. Armamos el par básico para Authorization header si MP lo requiere
+    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+    // 2. Realizamos la petición a Mercado Pago
     const response = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
+        'Authorization': `Bearer ${clientSecret}`, // Pasamos el token maestro como Bearer
       },
       body: new URLSearchParams({
         client_secret: clientSecret,
@@ -37,17 +42,17 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
 
     if (!response.ok) {
-      // IMPRIMIMOS EL DETALLE EN LOS LOGS DE VERCEL
       console.error('[MP OAuth Exchange Failure]:', {
         status: response.status,
         dataResponse: data,
         sentClientId: clientId,
-        sentRedirectUri: redirectUri
+        sentRedirectUri: redirectUri,
+        hasClientSecret: !!clientSecret
       });
       return NextResponse.redirect(`${appUrl}/dashboard?mp_error=token_exchange_failed`);
     }
 
-    // Guardamos en Prisma
+    // 3. Guardamos credenciales en Neon/Prisma
     await prisma.organizer.update({
       where: { id: organizerId },
       data: {
