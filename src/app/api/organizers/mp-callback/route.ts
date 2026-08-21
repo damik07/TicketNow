@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const redirectUri = `${appUrl}/api/organizers/mp-callback`;
 
     // Intercambio de OAuth Estándar según la spec oficial de MP
-    const response = await fetch('https://api.mercadopago.com/oauth/token', {
+    const response = await fetch('https://api.mercadopago.com.ar/oauth/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
