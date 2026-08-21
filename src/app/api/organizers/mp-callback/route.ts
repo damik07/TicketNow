@@ -15,9 +15,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const redirectUri = `${appUrl}/api/organizers/mp-callback`;
-    const clientId = process.env.MERCADO_PAGO_CLIENT_ID || '';
-    const clientSecret = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MERCADO_PAGO_CLIENT_SECRET || '';
+    const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
+    const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+    const redirectUri = `${appUrl}/api/organizers/mp-callback`.trim();
 
     const response = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
