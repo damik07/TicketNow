@@ -2,17 +2,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
-  const organizerId = searchParams.get('state'); // Recibimos el organizerId que enviamos en state
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const organizerId = searchParams.get('state');
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app';
 
   if (!code || !organizerId) {
     return NextResponse.redirect(`${appUrl}/dashboard?mp_error=invalid_callback`);
   }
 
   try {
+    const redirectUri = `${appUrl}/api/organizers/mp-callback`;
+    const clientId = process.env.MERCADO_PAGO_CLIENT_ID || '';
+    const clientSecret = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MERCADO_PAGO_CLIENT_SECRET || '';
+
     const response = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
       headers: {
@@ -20,22 +26,28 @@ export async function GET(request: NextRequest) {
         'Accept': 'application/json',
       },
       body: new URLSearchParams({
-        client_secret: process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MERCADOPAGO_SECRET_KEY || '',
-        client_id: process.env.MERCADO_PAGO_CLIENT_ID || '',
+        client_secret: clientSecret,
+        client_id: clientId,
         grant_type: 'authorization_code',
         code: code,
-        redirect_uri: `${appUrl}/api/organizers/mp-callback`,
+        redirect_uri: redirectUri,
       }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('[MP OAuth Error Data]:', data);
+      // IMPRIMIMOS EL DETALLE EN LOS LOGS DE VERCEL
+      console.error('[MP OAuth Exchange Failure]:', {
+        status: response.status,
+        dataResponse: data,
+        sentClientId: clientId,
+        sentRedirectUri: redirectUri
+      });
       return NextResponse.redirect(`${appUrl}/dashboard?mp_error=token_exchange_failed`);
     }
 
-    // 🔑 Guardamos las credenciales en la tabla Organizer de la BD
+    // Guardamos en Prisma
     await prisma.organizer.update({
       where: { id: organizerId },
       data: {
