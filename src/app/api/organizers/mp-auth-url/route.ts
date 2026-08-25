@@ -12,12 +12,24 @@ export async function GET(request: NextRequest) {
 
     const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app').replace(/\/$/, '');
-    const redirectUri = encodeURIComponent(`${appUrl}/api/organizers/mp-callback`);
+    
+    // URL base de redirección sin encodeURIComponent manual
+    const redirectUri = `${appUrl}/api/organizers/mp-callback`;
 
-    // 'prompt=consent' fuerza a pedir autorización de nuevo y generar un code fresco
-    const authUrl = `https://auth.mercadopago.com.ar/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${organizerId}&redirect_uri=${redirectUri}&prompt=consent`;
+    if (!clientId) {
+      return NextResponse.json({ error: 'MERCADO_PAGO_CLIENT_ID no configurado' }, { status: 500 });
+    }
 
-    return NextResponse.json({ url: authUrl });
+    // Usamos el objeto URL nativo para construir los parámetros de forma limpia y segura
+    const mpUrl = new URL('https://auth.mercadopago.com.ar/authorization');
+    mpUrl.searchParams.set('client_id', clientId);
+    mpUrl.searchParams.set('response_type', 'code');
+    mpUrl.searchParams.set('platform_id', 'mp');
+    mpUrl.searchParams.set('state', organizerId);
+    mpUrl.searchParams.set('redirect_uri', redirectUri);
+    mpUrl.searchParams.set('prompt', 'consent');
+
+    return NextResponse.json({ url: mpUrl.toString() });
   } catch (error) {
     console.error('[MP Auth URL Error]:', error);
     return NextResponse.json({ error: 'Error al generar URL de autorización' }, { status: 500 });
