@@ -1,18 +1,15 @@
-// app/api/orders/route.ts
-
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { orderLineBuyerUnitPrice, packCommissionSliceFromPack, roundMoney } from '@/lib/pack-commission'
 import { completeQueueSession, validateCheckoutAccess } from '@/lib/queue'
-import { MercadoPagoConfig, Preference } from 'mercadopago'
+import { Preference } from 'mercadopago'
+import { mpClient } from '@/lib/mercadopago'
 
 export const dynamic = 'force-dynamic';
 
-const mpClient = new MercadoPagoConfig({
-  accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || '',
-})
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,16 +23,12 @@ export async function GET(request: NextRequest) {
         ...(userId && { userId }),
         ...(eventId && { eventId }),
         ...(organizerId && {
-          event: {
-            organizerId: organizerId
-          }
+          event: { organizerId }
         }),
       },
       include: {
         items: {
-          include: {
-            ticketType: true
-          }
+          include: { ticketType: true }
         },
         user: {
           select: {
@@ -167,42 +160,46 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Completa la sesión de fila en ambos flujos
-    if (sessionToken) {
-      await completeQueueSession(sessionToken, eventId)
-    }
-
     // ==========================================
     // 💡 CASO A: PAGO REAL CON MERCADO PAGO
     // ==========================================
     if (!isSimulated && paymentMethod === 'mercadopago') {
-      const preference = new Preference(mpClient)
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const webhookBaseUrl = process.env.MERCADO_PAGO_WEBHOOK_URL || appUrl
 
-      const mpPreference = await preference.create({
-        body: {
-          items: pricedItems.map((item) => ({
-            id: item.ticketTypeId,
-            title: `${event.title} - ${item.ticketTypeName}`,
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            currency_id: 'ARS',
-          })),
-          external_reference: order.id,
-          back_urls: {
-            success: `${appUrl}/MisEntradas?status=success`,
-            failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
-            pending: `${appUrl}/MisEntradas?status=pending`,
-          },
-          auto_return: 'approved',
-          notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
+      const preferenceBody: any = {
+        items: pricedItems.map((item) => ({
+          id: item.ticketTypeId,
+          title: `${event.title} - ${item.ticketTypeName}`,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          currency_id: 'ARS',
+        })),
+        payer: {
+          email: session.user.email || undefined,
+          name: session.user.name || undefined,
         },
-      })
+        external_reference: order.id,
+        back_urls: {
+          success: `${appUrl}/MisEntradas?status=success`,
+          failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
+          pending: `${appUrl}/MisEntradas?status=pending`,
+        },
+        auto_return: 'approved',
+      }
+
+      // MP solo acepta notification_url en HTTPS (evita errores en localhost sin ngrok)
+      if (webhookBaseUrl.startsWith('https://')) {
+        preferenceBody.notification_url = `${webhookBaseUrl}/api/webhooks/mercadopago`
+      }
+
+      const preference = new Preference(mpClient)
+      const mpPreference = await preference.create({ body: preferenceBody })
 
       return NextResponse.json({
         order,
         initPoint: mpPreference.init_point,
+        sandboxInitPoint: mpPreference.sandbox_init_point,
         packApplied: {
           name: event.pack?.name,
           isAbsorbed: event.pack?.ticketPercentApply === 'DEDUCE_DEL_PRECIO'
@@ -213,6 +210,10 @@ export async function POST(request: NextRequest) {
     // ==========================================
     // 💡 CASO B: PROCESO SIMULADO
     // ==========================================
+    if (sessionToken) {
+      await completeQueueSession(sessionToken, eventId)
+    }
+
     for (const item of pricedItems) {
       await prisma.ticketType.update({
         where: { id: item.ticketTypeId },

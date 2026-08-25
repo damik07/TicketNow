@@ -16,19 +16,19 @@ export async function GET(request: NextRequest) {
 
   try {
     const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
-    const accessToken = (process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+    const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
     const redirectUri = `${appUrl}/api/organizers/mp-callback`;
 
-    // Para Sandbox, MP exige autenticación mediante el Bearer Token de la App contenedora
+    // Solicitud POST oficial a Mercado Pago OAuth en formato JSON
     const response = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
       },
-      body: new URLSearchParams({
+      body: JSON.stringify({
         client_id: clientId,
+        client_secret: clientSecret,
         grant_type: 'authorization_code',
         code: code,
         redirect_uri: redirectUri,
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}/dashboard?mp_error=token_exchange_failed`);
     }
 
-    // Guardar credenciales de test del organizador en Neon
+    // Guardar credenciales obtenidas del organizador en Neon
     await prisma.organizer.update({
       where: { id: organizerId },
       data: {

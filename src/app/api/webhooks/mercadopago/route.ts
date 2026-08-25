@@ -1,15 +1,12 @@
 // app/api/webhooks/mercadopago/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
-import { MercadoPagoConfig, Payment } from 'mercadopago'
+import { Payment } from 'mercadopago'
 import { processSuccessOrder } from '@/lib/orders/processOrder'
 import { prisma } from '@/lib/db'
+import { mpClient } from '@/lib/mercadopago'
 
 export const dynamic = 'force-dynamic';
-
-const platformClient = new MercadoPagoConfig({
-  accessToken: process.env.MERCADOPAGO_SECRET_KEY || process.env.MERCADO_PAGO_ACCESS_TOKEN || '',
-})
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,12 +26,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Si no es un evento de pago o no tenemos ID, respondemos 200 para que MP no reintente
-    if (type !== 'payment' || !dataId) {
+    // Si no es un evento de pago o no tenemos ID, respondemos 200 OK para descartar
+    if ((type !== 'payment' && type !== 'payment.created' && type !== 'payment.updated') || !dataId) {
       return NextResponse.json({ received: true }, { status: 200 })
     }
 
-    const paymentClient = new Payment(platformClient)
+    const paymentClient = new Payment(mpClient)
     let paymentData;
     
     try {
@@ -101,7 +98,8 @@ export async function POST(request: NextRequest) {
 
     if (!orderId) {
       console.error(`[MP Webhook] Pago ${dataId} sin external_reference ni order_id`)
-      return NextResponse.json({ error: 'Missing external reference' }, { status: 400 })
+      // Devolvemos 200 para evitar retries infinitos de un evento huérfano
+      return NextResponse.json({ received: true, warning: 'Missing external reference' }, { status: 200 })
     }
 
     if (paymentData.status === 'approved') {
@@ -109,7 +107,7 @@ export async function POST(request: NextRequest) {
         where: { id: orderId }
       });
 
-      // Verificamos por paymentStatus === 'pendiente' (compatible con la creación en route.ts)
+      // Verificamos por paymentStatus !== 'aprobado' para mantener idempotencia
       if (existingOrder && existingOrder.paymentStatus !== 'aprobado') {
         // Actualizamos estado de pago en la orden
         await prisma.order.update({

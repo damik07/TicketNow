@@ -259,8 +259,11 @@ function CheckoutContent() {
         setSuccess(true);
         toast.success("¡Compra simulada con éxito y entradas enviadas por mail!");
       } else {
-        if (payload.initPoint) {
-          window.location.href = payload.initPoint;
+        // 🔑 Tomamos el punto de inicio de producción o sandbox según lo que devuelva el backend
+        const redirectUrl = payload.sandboxInitPoint || payload.initPoint;
+
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
         } else {
           throw new Error("No se pudo obtener la pasarela de Mercado Pago");
         }

@@ -2,14 +2,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import MercadoPagoConfig, { Preference } from "mercadopago";
+import { MercadoPagoConfig, Preference } from "mercadopago";
 
 export const dynamic = 'force-dynamic';
 
-// Inicializamos MercadoPago con tu Access Token de entorno
-const client = new MercadoPagoConfig({
-  accessToken: process.env.MERCADOPAGO_SECRET_KEY || "",
-});
+const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MERCADOPAGO_SECRET_KEY || "";
+const client = new MercadoPagoConfig({ accessToken });
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,51 +16,61 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const { ticketId, monto, esDiferenciaConsumo } = await request.json();
+    const { type, eventId, ticketId, quantity = 1, monto, title } = await request.json();
 
-    if (!ticketId || !monto || monto <= 0) {
-      return NextResponse.json({ error: "Datos de solicitud inválidos" }, { status: 400 });
+    // Validación según el tipo de producto
+    if (!monto || monto <= 0) {
+      return NextResponse.json({ error: "Monto inválido" }, { status: 400 });
     }
 
-    // Definimos URLs de retorno absolutas de tu app
-    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-
+    const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "http://localhost:3000").replace(/\/$/, "");
     const preferenceFactory = new Preference(client);
-    
+
+    const isEntrada = type === 'ENTRADA';
+
+    // 1. Configuramos URLs de retorno según el contexto de compra
+    const redirectPath = isEntrada ? '/MisEntradas' : '/MisConsumiciones';
+
     const preference = await preferenceFactory.create({
       body: {
         items: [
           {
-            id: `diff-${ticketId}`,
-            title: "Diferencia de consumo - Barra TicketNow",
-            quantity: 1,
+            id: isEntrada ? `event-${eventId}` : `diff-${ticketId}`,
+            title: title || (isEntrada ? "Entrada para Evento - TicketNow" : "Diferencia de consumo - Barra"),
+            quantity: Number(quantity),
             unit_price: Number(monto),
             currency_id: "ARS",
           },
         ],
-        // 🔑 CLAVE: Guardamos metadatos cruciales para que el webhook sepa qué hacer al aprobarse
+        // 🔑 METADATOS: El Webhook leerá 'type' para saber qué tabla/registro actualizar en Prisma
         metadata: {
-          ticket_id: ticketId,
+          type: type || 'ENTRADA', // 'ENTRADA' | 'CONSUMISION'
+          event_id: eventId || null,
+          ticket_id: ticketId || null,
           user_id: session.user.id,
-          es_diferencia_consumo: !!esDiferenciaConsumo,
+          quantity: Number(quantity),
         },
         back_urls: {
-          success: `${baseUrl}/MisConsumiciones?payment=success`,
-          failure: `${baseUrl}/MisConsumiciones?payment=failed`,
-          pending: `${baseUrl}/MisConsumiciones?payment=pending`,
+          success: `${baseUrl}${redirectPath}?payment=success`,
+          failure: `${baseUrl}${redirectPath}?payment=failed`,
+          pending: `${baseUrl}${redirectPath}?payment=pending`,
         },
         auto_return: "approved",
+        notification_url: `${baseUrl}/api/webhooks/mercadopago`,
       },
     });
 
-    // Retornamos el init_point para que el frontend pueda hacer el router.push()
     return NextResponse.json({ 
       id: preference.id, 
-      init_point: preference.init_point 
+      init_point: preference.init_point,
+      sandbox_init_point: preference.sandbox_init_point,
     });
 
   } catch (error: any) {
-    console.error("Error al crear preferencia MP:", error);
-    return NextResponse.json({ error: "Error al generar la pasarela de pago" }, { status: 500 });
+    console.error("[MP Preference Exception]:", error);
+    return NextResponse.json(
+      { error: "Error al generar la pasarela de pago", details: error.message }, 
+      { status: 500 }
+    );
   }
 }
