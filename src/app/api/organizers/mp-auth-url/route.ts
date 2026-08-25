@@ -10,12 +10,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'organizerId es requerido' }, { status: 400 });
     }
 
-    const clientId = process.env.MERCADO_PAGO_CLIENT_ID;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app').replace(/\/$/, '');
     const redirectUri = encodeURIComponent(`${appUrl}/api/organizers/mp-callback`);
-    
-    // Enviamos organizerId en el parámetro state para reconocerlo al volver
-    const authUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${organizerId}&redirect_uri=${redirectUri}`;
+
+    // 'prompt=consent' fuerza a pedir autorización de nuevo y generar un code fresco
+    const authUrl = `https://auth.mercadopago.com.ar/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${organizerId}&redirect_uri=${redirectUri}&prompt=consent`;
 
     return NextResponse.json({ url: authUrl });
   } catch (error) {
