@@ -1,75 +1,69 @@
-// app/api/auth/mercadopago/callback/route.ts
-
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+// app/api/organizers/mp-callback/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const code = searchParams.get("code");
-  const organizerId = searchParams.get("state"); // ID del organizador enviado en el paso anterior
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ticket-now-smoky.vercel.app";
+  const code = searchParams.get('code');
+  const organizerId = searchParams.get('state');
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app').replace(/\/$/, '');
 
   if (!code || !organizerId) {
-    console.error("[MP OAuth Callback] Faltan parámetros clave (code o state/organizerId).");
-    return NextResponse.redirect(`${appUrl}/Dashboard?error=mp_invalid_params`);
+    return NextResponse.redirect(`${appUrl}/dashboard?mp_error=invalid_callback`);
   }
 
   try {
-    const clientSecret = process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN;
-    const clientId = process.env.MERCADO_PAGO_CLIENT_ID;
-    const redirectUri = process.env.MERCADO_PAGO_REDIRECT_URI;
+    const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
+    const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || '').trim();
+    const accessToken = (process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+    const redirectUri = `${appUrl}/api/organizers/mp-callback`;
 
-    if (!clientSecret || !clientId || !redirectUri) {
-      console.error("[MP OAuth Callback] Faltan variables de entorno necesarias.");
-      return NextResponse.redirect(`${appUrl}/Dashboard?error=mp_missing_env_vars`);
-    }
-
-    // 1. Intercambiamos el código de autorización por el Access Token
-    // IMPORTANTE: No se envía header 'Authorization'
-    const tokenResponse = await fetch("https://api.mercadopago.com/oauth/token", {
-      method: "POST",
+    // Intercambio OAuth contra Mercado Pago
+    const response = await fetch('https://api.mercadopago.com/oauth/token', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        // Enviar Bearer token de la app en la cabecera asegura autenticación en MP
+        ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
       },
       body: new URLSearchParams({
-        client_secret: clientSecret,
         client_id: clientId,
-        grant_type: "authorization_code",
+        client_secret: clientSecret,
+        grant_type: 'authorization_code',
         code: code,
         redirect_uri: redirectUri,
       }),
     });
 
-    const tokenData = await tokenResponse.json();
+    const data = await response.json();
 
-    if (!tokenResponse.ok || tokenData.error || !tokenData.access_token) {
-      console.error("[MP OAuth Callback] Error en intercambio de token:", tokenData);
-      return NextResponse.redirect(`${appUrl}/Dashboard?error=mp_token_exchange_failed`);
+    if (!response.ok) {
+      console.error('[MP OAuth Exchange Failure]:', {
+        status: response.status,
+        dataResponse: data,
+        sentClientId: clientId,
+        sentRedirectUri: redirectUri,
+      });
+      return NextResponse.redirect(`${appUrl}/dashboard?mp_error=token_exchange_failed`);
     }
 
-    // 2. Guardamos las credenciales completas en la base de datos
+    // Guardar tokens del vendedor/organizador en la base de datos (Prisma / Neon)
     await prisma.organizer.update({
       where: { id: organizerId },
       data: {
-        mercadopagoUserId: String(tokenData.user_id),
-        // Si ya agregaste estos campos al schema de Prisma:
-        ...(tokenData.access_token && { mercadopagoAccessToken: tokenData.access_token }),
-        ...(tokenData.refresh_token && { mercadopagoRefreshToken: tokenData.refresh_token }),
-        ...(tokenData.expires_in && {
-          mercadopagoExpiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
-        }),
+        mercadopagoUserId: String(data.user_id),
+        mercadopagoAccessToken: data.access_token,
+        mercadopagoRefreshToken: data.refresh_token,
+        mercadopagoExpiresAt: new Date(Date.now() + (data.expires_in || 15552000) * 1000),
       },
     });
 
-    // 3. Redirección exitosa
-    return NextResponse.redirect(`${appUrl}/Dashboard?success=mp_connected`);
-
+    return NextResponse.redirect(`${appUrl}/dashboard?mp_success=true`);
   } catch (error) {
-    console.error("[MP OAuth Callback] Error crítico en el servidor:", error);
-    return NextResponse.redirect(`${appUrl}/Dashboard?error=mp_internal_server_error`);
+    console.error('[MP OAuth Callback Exception]:', error);
+    return NextResponse.redirect(`${appUrl}/dashboard?mp_error=server_error`);
   }
 }
