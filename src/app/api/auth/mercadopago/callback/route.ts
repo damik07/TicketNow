@@ -19,17 +19,16 @@ export async function GET(request: NextRequest) {
     const accessToken = (process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
     const redirectUri = `${appUrl}/api/organizers/mp-callback`;
 
-    // 1. Petición OAuth a Mercado Pago usando Bearer Token de prueba
+    // Para Sandbox, MP exige autenticación mediante el Bearer Token de la App contenedora
     const response = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${accessToken}`, // Autentica la App en Sandbox
+        'Authorization': `Bearer ${accessToken}`,
       },
       body: new URLSearchParams({
         client_id: clientId,
-        client_secret: accessToken, // MP Sandbox acepta el Access Token como secret en el body
         grant_type: 'authorization_code',
         code: code,
         redirect_uri: redirectUri,
@@ -48,7 +47,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}/dashboard?mp_error=token_exchange_failed`);
     }
 
-    // 2. Guardamos las credenciales del vendedor/organizador en Neon con Prisma
+    // Guardar credenciales de test del organizador en Neon
     await prisma.organizer.update({
       where: { id: organizerId },
       data: {
