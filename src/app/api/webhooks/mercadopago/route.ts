@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    
+
     // 1. Parsear id y type tanto de Query Params como del JSON Body (Compatibilidad MP V2)
     let type = searchParams.get('type') || searchParams.get('topic')
     let dataId = searchParams.get('data.id') || searchParams.get('id')
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const paymentClient = new Payment(mpClient)
     let paymentData;
-    
+
     try {
       paymentData = await paymentClient.get({ id: dataId });
     } catch (err) {
@@ -109,15 +109,22 @@ export async function POST(request: NextRequest) {
 
       // Verificamos por paymentStatus !== 'aprobado' para mantener idempotencia
       if (existingOrder && existingOrder.paymentStatus !== 'aprobado') {
-        // Actualizamos estado de pago en la orden
-        await prisma.order.update({
-          where: { id: orderId },
+        // Intentamos actualizar SOLO SI el estado sigue sin estar aprobado
+        const updated = await prisma.order.updateMany({
+          where: {
+            id: orderId,
+            paymentStatus: { not: 'aprobado' }
+          },
           data: { paymentStatus: 'aprobado' }
         });
 
-        // Ejecuta la emisión de QRs y lógica final
-        await processSuccessOrder(orderId);
-        console.log(`[MP Webhook] Orden ${orderId} aprobada correctamente.`);
+        // count === 1 garantiza que ESTE thread fue el primero en marcarlo como aprobado
+        if (updated.count > 0) {
+          await processSuccessOrder(orderId);
+          console.log(`[MP Webhook] Orden ${orderId} aprobada correctamente.`);
+        } else {
+          console.log(`[MP Webhook] Orden ${orderId} ya estaba siendo procesada por otro evento.`);
+        }
       }
     }
 

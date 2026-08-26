@@ -4,8 +4,9 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { orderLineBuyerUnitPrice, packCommissionSliceFromPack, roundMoney } from '@/lib/pack-commission'
 import { completeQueueSession, validateCheckoutAccess } from '@/lib/queue'
-import { Preference } from 'mercadopago'
+
 import { mpClient } from '@/lib/mercadopago'
+import { MercadoPagoConfig, Preference } from 'mercadopago'
 
 export const dynamic = 'force-dynamic';
 
@@ -85,7 +86,11 @@ export async function POST(request: NextRequest) {
 
     const event = await prisma.event.findUnique({
       where: { id: eventId },
-      include: { ticketTypes: true, pack: true },
+      include: { 
+        ticketTypes: true, 
+        pack: true,
+        organizer: true // 👈 Asegurarse de incluir al organizador para obtener su token OAuth
+      },
     })
 
     if (!event) {
@@ -160,12 +165,21 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    
     // ==========================================
-    // 💡 CASO A: PAGO REAL CON MERCADO PAGO
+    // 💡 CASO A: PAGO REAL CON MERCADO PAGO (SPLIT PAYMENT)
     // ==========================================
     if (!isSimulated && paymentMethod === 'mercadopago') {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const webhookBaseUrl = process.env.MERCADO_PAGO_WEBHOOK_URL || appUrl
+
+      // 1. Obtener la comisión según tu modelo EventPack (commissionTickets)
+      const commissionPercent = event.pack?.commissionTickets ?? 0
+
+      // Calcular el service charge total cobrado por TicketNow
+      const totalServiceCharge = pricedItems.reduce((acc, item) => {
+        return acc + (item.subtotal * (commissionPercent / 100))
+      }, 0)
 
       const preferenceBody: any = {
         items: pricedItems.map((item) => ({
@@ -180,6 +194,8 @@ export async function POST(request: NextRequest) {
           name: session.user.name || undefined,
         },
         external_reference: order.id,
+        // 💡 Definir la comisión de la Plataforma (TicketNow)
+        marketplace_fee: roundMoney(totalServiceCharge), 
         back_urls: {
           success: `${appUrl}/MisEntradas?status=success`,
           failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
@@ -188,13 +204,24 @@ export async function POST(request: NextRequest) {
         auto_return: 'approved',
       }
 
-      // MP solo acepta notification_url en HTTPS (evita errores en localhost sin ngrok)
       if (webhookBaseUrl.startsWith('https://')) {
         preferenceBody.notification_url = `${webhookBaseUrl}/api/webhooks/mercadopago`
       }
 
       const preference = new Preference(mpClient)
-      const mpPreference = await preference.create({ body: preferenceBody })
+
+      // 💡 Obtener el token OAuth del Organizador
+      // Reemplaza 'mercadopagoAccessToken' por el nombre exacto de la columna en tu modelo Organizer
+      const organizerAccessToken = (event.organizer as any)?.mercadopagoAccessToken || (event.organizer as any)?.mpAccessToken
+
+      const mpPreference = await preference.create({
+        body: preferenceBody,
+        ...(organizerAccessToken && {
+          requestOptions: {
+            accessToken: organizerAccessToken
+          }
+        })
+      })
 
       return NextResponse.json({
         order,
