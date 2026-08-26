@@ -1,5 +1,6 @@
 // lib/mercadopago.ts
 import { MercadoPagoConfig } from 'mercadopago';
+import { prisma } from '@/lib/db';
 
 const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || '';
 
@@ -11,3 +12,71 @@ if (!accessToken) {
 export const mpClient = new MercadoPagoConfig({
   accessToken: accessToken,
 });
+
+/**
+ * Renueva el Access Token de un organizador utilizando su Refresh Token.
+ */
+export async function refreshOrganizerMpToken(organizerId: string): Promise<string> {
+  const organizer = await prisma.organizer.findUnique({
+    where: { id: organizerId },
+    select: {
+      mercadopagoRefreshToken: true,
+      mercadopagoAccessToken: true,
+      mercadopagoExpiresAt: true,
+    },
+  });
+
+  if (!organizer || !organizer.mercadopagoRefreshToken) {
+    throw new Error(`El organizador ${organizerId} no posee un Refresh Token de Mercado Pago vinculado.`);
+  }
+
+  const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+  const isSandbox = process.env.MERCADO_PAGO_ENV === 'sandbox' || clientSecret.startsWith('TEST-');
+
+  const bodyParams = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: 'refresh_token',
+    refresh_token: organizer.mercadopagoRefreshToken,
+  });
+
+  if (isSandbox) {
+    bodyParams.append('test_token', 'true');
+  }
+
+  const response = await fetch('https://api.mercadopago.com/oauth/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    },
+    body: bodyParams,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error(`[MP Token Refresh Error] Organizer: ${organizerId}`, data);
+    throw new Error(data.message || 'Error al refrescar token de Mercado Pago');
+  }
+
+  const expiresInSeconds = data.expires_in || 15552000;
+  const newExpiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+
+  const updatedOrganizer = await prisma.organizer.update({
+    where: { id: organizerId },
+    data: {
+      mercadopagoAccessToken: data.access_token,
+      mercadopagoRefreshToken: data.refresh_token,
+      mercadopagoExpiresAt: newExpiresAt,
+      mercadopagoPublicKey: data.public_key || null,
+    },
+  });
+
+  if (!updatedOrganizer.mercadopagoAccessToken) {
+    throw new Error('No se pudo verificar el nuevo access_token guardado.');
+  }
+
+  return updatedOrganizer.mercadopagoAccessToken;
+}
