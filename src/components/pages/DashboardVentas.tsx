@@ -18,6 +18,7 @@ interface Organizer {
   business_name: string;
   verified: boolean;
   mercadopago_user_id?: string | null;
+  mercadopagoUserId?: string | null;
 }
 
 interface Event {
@@ -210,7 +211,10 @@ export default function DashboardVentas() {
   const refreshOrganizerData = useCallback(async () => {
     if (!user) return;
     try {
-      const organizerResponse = await fetch(`/api/organizers?userId=${user.id}`);
+      const timestamp = new Date().getTime();
+      const organizerResponse = await fetch(`/api/organizers?userId=${user.id}&t=${timestamp}`, {
+        cache: 'no-store'
+      });
       const organizersData = await organizerResponse.json();
       if (organizersData.length > 0) {
         setOrganizer(organizersData[0]);
@@ -322,7 +326,8 @@ export default function DashboardVentas() {
           {organizer && (
             <MpConnectBanner
               organizerId={organizer.id}
-              mercadopagoUserId={organizer.mercadopago_user_id}
+              /* 👈 3. Evaluación de fallback entre ambas convenciones de nombrado */
+              mercadopagoUserId={organizer.mercadopagoUserId || organizer.mercadopago_user_id}
               onRefreshOrganizer={refreshOrganizerData}
             />
           )}
