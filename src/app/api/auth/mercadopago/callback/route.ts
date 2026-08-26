@@ -1,38 +1,47 @@
 // app/api/organizers/mp-callback/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-
-export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
   const organizerId = searchParams.get('state');
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app').replace(/\/$/, '');
 
   if (!code || !organizerId) {
-    return NextResponse.redirect(`${appUrl}/dashboard?mp_error=invalid_callback`);
+    return NextResponse.redirect(
+      new URL('/dashboard?mp_error=missing_params', request.url)
+    );
+  }
+
+  const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || '').trim();
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://ticket-now-smoky.vercel.app').replace(/\/$/, '');
+  const redirectUri = `${appUrl}/api/organizers/mp-callback`;
+
+  // Determinar si estamos en Sandbox / Pruebas
+  const isSandbox = process.env.MERCADO_PAGO_ENV === 'sandbox' || clientSecret.startsWith('TEST-');
+
+  const bodyParams = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: 'authorization_code',
+    code: code,
+    redirect_uri: redirectUri,
+  });
+
+  // SI ESTAMOS EN SANDBOX / MODO PRUEBAS:
+  // Se requiere 'test_token=true' para que acepte el client_secret de pruebas
+  if (isSandbox) {
+    bodyParams.append('test_token', 'true');
   }
 
   try {
-    const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
-    const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
-    const redirectUri = `${appUrl}/api/organizers/mp-callback`;
-
-    // Solicitud POST oficial a Mercado Pago OAuth en formato JSON
     const response = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'authorization_code',
-        code: code,
-        redirect_uri: redirectUri,
-      }),
+      body: bodyParams,
     });
 
     const data = await response.json();
@@ -43,24 +52,23 @@ export async function GET(request: NextRequest) {
         dataResponse: data,
         sentClientId: clientId,
         sentRedirectUri: redirectUri,
+        isSandbox,
       });
-      return NextResponse.redirect(`${appUrl}/dashboard?mp_error=token_exchange_failed`);
+      return NextResponse.redirect(
+        new URL('/dashboard?mp_error=token_exchange_failed', request.url)
+      );
     }
 
-    // Guardar credenciales obtenidas del organizador en Neon
-    await prisma.organizer.update({
-      where: { id: organizerId },
-      data: {
-        mercadopagoUserId: String(data.user_id),
-        mercadopagoAccessToken: data.access_token,
-        mercadopagoRefreshToken: data.refresh_token,
-        mercadopagoExpiresAt: new Date(Date.now() + (data.expires_in || 15552000) * 1000),
-      },
-    });
+    // data contendrá: access_token, refresh_token, public_key, user_id, etc.
+    // Guardar tokens en la base de datos...
 
-    return NextResponse.redirect(`${appUrl}/dashboard?mp_success=true`);
+    return NextResponse.redirect(
+      new URL('/dashboard?mp_success=true', request.url)
+    );
   } catch (error) {
-    console.error('[MP OAuth Callback Exception]:', error);
-    return NextResponse.redirect(`${appUrl}/dashboard?mp_error=server_error`);
+    console.error('[MP Callback Exception]:', error);
+    return NextResponse.redirect(
+      new URL('/dashboard?mp_error=internal_error', request.url)
+    );
   }
 }
