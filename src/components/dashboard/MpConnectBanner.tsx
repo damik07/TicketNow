@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { CreditCard, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,39 @@ export default function MpConnectBanner({
   onRefreshOrganizer 
 }: MpConnectBannerProps) {
   const [connecting, setConnecting] = useState(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Capturar respuesta del OAuth cuando Mercado Pago redirige al Dashboard
+  useEffect(() => {
+    const mpSuccess = searchParams.get("mp_success");
+    const mpError = searchParams.get("mp_error");
+
+    if (mpSuccess === "true") {
+      toast.success("¡Mercado Pago conectado exitosamente!");
+      // Forzar la actualización del estado del organizador para reflejar la DB
+      onRefreshOrganizer();
+      
+      // Limpiar el parámetro de la URL de forma limpia sin recargar la página
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("mp_success");
+      router.replace(currentUrl.pathname + currentUrl.search);
+    } else if (mpError) {
+      const errorMessages: Record<string, string> = {
+        missing_params: "Faltan parámetros en la autorización de Mercado Pago.",
+        token_exchange_failed: "Error al intercambiar credenciales con Mercado Pago.",
+        server_configuration_error: "Error de configuración de servidor en Mercado Pago.",
+        internal_error: "Ocurrió un error inesperado durante la vinculación.",
+      };
+
+      toast.error(errorMessages[mpError] || "No se pudo completar la vinculación con Mercado Pago.");
+
+      // Limpiar el parámetro de error de la URL
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("mp_error");
+      router.replace(currentUrl.pathname + currentUrl.search);
+    }
+  }, [searchParams, router, onRefreshOrganizer]);
 
   const handleConnect = async () => {
     setConnecting(true);
