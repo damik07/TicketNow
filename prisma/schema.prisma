@@ -50,6 +50,7 @@ model Organizer {
   mercadopagoUserId       String?   @map("mercadopago_user_id")
   mercadopagoAccessToken  String?   @map("mercadopago_access_token")
   mercadopagoRefreshToken String?   @map("mercadopago_refresh_token")
+  mercadopagoPublicKey    String?   @map("mercadopago_public_key")
   mercadopagoExpiresAt    DateTime? @map("mercadopago_expires_at")
 }
 
