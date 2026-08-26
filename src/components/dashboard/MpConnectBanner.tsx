@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { CreditCard, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { toast } from "sonner";
 interface MpConnectBannerProps {
   organizerId: string;
   mercadopagoUserId?: string | null;
-  onRefreshOrganizer: () => void;
+  onRefreshOrganizer: () => void | Promise<void>;
 }
 
 export default function MpConnectBanner({ 
@@ -21,47 +21,57 @@ export default function MpConnectBanner({
   const [connecting, setConnecting] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
+  
+  // Guardamos una referencia para no ejecutar el handler múltiples veces en modo estricto
+  const processedRef = useRef(false);
 
-  // Capturar respuesta del OAuth cuando Mercado Pago redirige al Dashboard
   useEffect(() => {
     const mpSuccess = searchParams.get("mp_success");
     const mpError = searchParams.get("mp_error");
 
-    if (mpSuccess === "true") {
-      toast.success("¡Mercado Pago conectado exitosamente!");
-      // Forzar la actualización del estado del organizador para reflejar la DB
-      onRefreshOrganizer();
-      
-      // Limpiar el parámetro de la URL de forma limpia sin recargar la página
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.delete("mp_success");
-      router.replace(currentUrl.pathname + currentUrl.search);
-    } else if (mpError) {
-      const errorMessages: Record<string, string> = {
-        missing_params: "Faltan parámetros en la autorización de Mercado Pago.",
-        token_exchange_failed: "Error al intercambiar credenciales con Mercado Pago.",
-        server_configuration_error: "Error de configuración de servidor en Mercado Pago.",
-        internal_error: "Ocurrió un error inesperado durante la vinculación.",
-      };
+    if ((mpSuccess || mpError) && !processedRef.current) {
+      processedRef.current = true;
 
-      toast.error(errorMessages[mpError] || "No se pudo completar la vinculación con Mercado Pago.");
+      if (mpSuccess === "true") {
+        // 1. Pedir actualización de datos a la API de Neon inmediatamente
+        onRefreshOrganizer();
 
-      // Limpiar el parámetro de error de la URL
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.delete("mp_error");
-      router.replace(currentUrl.pathname + currentUrl.search);
+        // 2. Dar un pequeño delay para que la UI no colisione con el replace de la URL
+        setTimeout(() => {
+          toast.success("¡Mercado Pago conectado exitosamente!");
+
+          // 3. Limpiar parámetros de la URL
+          const currentUrl = new URL(window.location.href);
+          currentUrl.searchParams.delete("mp_success");
+          router.replace(currentUrl.pathname + currentUrl.search);
+        }, 100);
+
+      } else if (mpError) {
+        const errorMessages: Record<string, string> = {
+          missing_params: "Faltan parámetros en la autorización de Mercado Pago.",
+          token_exchange_failed: "Error al intercambiar credenciales con Mercado Pago.",
+          server_configuration_error: "Error de configuración de servidor en Mercado Pago.",
+          internal_error: "Ocurrió un error inesperado durante la vinculación.",
+        };
+
+        setTimeout(() => {
+          toast.error(errorMessages[mpError] || "No se pudo completar la vinculación.");
+
+          const currentUrl = new URL(window.location.href);
+          currentUrl.searchParams.delete("mp_error");
+          router.replace(currentUrl.pathname + currentUrl.search);
+        }, 100);
+      }
     }
   }, [searchParams, router, onRefreshOrganizer]);
 
   const handleConnect = async () => {
     setConnecting(true);
     try {
-      // Pedimos al backend la URL de autorización oficial de Mercado Pago armada
       const response = await fetch(`/api/organizers/mp-auth-url?organizerId=${organizerId}`);
       const data = await response.json();
       
       if (data.url) {
-        // Redirigimos a Mercado Pago para que el organizador autorice la app
         window.location.href = data.url;
       } else {
         throw new Error(data.error || "No se pudo generar la URL de vinculación.");
@@ -72,6 +82,7 @@ export default function MpConnectBanner({
     }
   };
 
+  // Verificamos ambas formas de nombrado por seguridad
   if (mercadopagoUserId) {
     return (
       <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 flex items-center justify-between mb-6">
