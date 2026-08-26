@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Redirección al dashboard indicando éxito
-    return NextResponse.redirect(`${appUrl}/dashboard?mp_success=true`); // dashboard?mp_success=true para cuando está en prueba
+    return NextResponse.redirect(`${appUrl}/DashboardVentas?mp_success=true`); // dashboard?mp_success=true para cuando está en prueba
   } catch (error) {
     console.error('[MP Callback Exception]:', error);
     return NextResponse.redirect(`${appUrl}/dashboard?mp_error=internal_error`);
