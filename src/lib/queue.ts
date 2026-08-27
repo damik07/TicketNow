@@ -235,7 +235,9 @@ export async function getQueueStatus(sessionToken: string, eventId: string) {
   }
 
   if (entry.status === 'admitted') {
-    if (!entry.expiresAt || entry.expiresAt <= new Date()) {
+    const now = new Date()
+
+    if (!entry.expiresAt || entry.expiresAt <= now) {
       await prisma.queueEntry.update({
         where: { id: entry.id },
         data: { status: 'expired' },
@@ -243,10 +245,17 @@ export async function getQueueStatus(sessionToken: string, eventId: string) {
       await processAdmissions(eventId)
       return { status: 'expired' as const, message: 'Tiempo de compra agotado' }
     }
+
     return {
       status: 'admitted' as const,
       expiresAt: entry.expiresAt.toISOString(),
-      maxConcurrent: (await prisma.event.findUnique({ where: { id: eventId }, select: { maxConcurrent: true } }))?.maxConcurrent,
+      sessionToken: entry.sessionToken, // 👈 Devolver para asegurar el token activo
+      maxConcurrent: (
+        await prisma.event.findUnique({
+          where: { id: eventId },
+          select: { maxConcurrent: true },
+        })
+      )?.maxConcurrent,
     }
   }
 
@@ -301,6 +310,7 @@ export async function validateCheckoutAccess(
     return { ok: false as const, reason: 'invalid_token' }
   }
 
+  // Permitir reingreso si el pago no fue confirmado exitosamente
   if (entry.status === 'completed') {
     return { ok: false as const, reason: 'already_completed' }
   }
@@ -309,7 +319,8 @@ export async function validateCheckoutAccess(
     return { ok: false as const, reason: 'not_admitted' }
   }
 
-  if (!entry.expiresAt || entry.expiresAt <= new Date()) {
+  const now = new Date()
+  if (!entry.expiresAt || entry.expiresAt <= now) {
     await prisma.queueEntry.update({
       where: { id: entry.id },
       data: { status: 'expired' },

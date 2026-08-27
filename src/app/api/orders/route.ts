@@ -86,8 +86,8 @@ export async function POST(request: NextRequest) {
 
     const event = await prisma.event.findUnique({
       where: { id: eventId },
-      include: { 
-        ticketTypes: true, 
+      include: {
+        ticketTypes: true,
         pack: true,
         organizer: true // 👈 Asegurarse de incluir al organizador para obtener su token OAuth
       },
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    
+
     // ==========================================
     // 💡 CASO A: PAGO REAL CON MERCADO PAGO (SPLIT PAYMENT)
     // ==========================================
@@ -195,10 +195,10 @@ export async function POST(request: NextRequest) {
         },
         external_reference: order.id,
         // 💡 Definir la comisión de la Plataforma (TicketNow)
-        marketplace_fee: roundMoney(totalServiceCharge), 
+        marketplace_fee: roundMoney(totalServiceCharge),
         back_urls: {
           success: `${appUrl}/MisEntradas?status=success`,
-          failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
+          failure: `${appUrl}/Checkout?event_id=${eventId}&session_token=${sessionToken}&status=failure`, // 👈 AGREGAR session_token
           pending: `${appUrl}/MisEntradas?status=pending`,
         },
         auto_return: 'approved',
