@@ -16,7 +16,7 @@ const PLAYLIST = [
   { id: "kgx4WGK0oNU", title: "Deep House Music", artist: "NoCopyrightSounds" },
 ];
 
-const SESSION_EXPIRE = 10 * 60 * 1000;
+const DEFAULT_EXPIRE_SECONDS = 10 * 60; // 10 minutos en segundos
 
 interface QueueEntry {
   id: string;
@@ -60,7 +60,9 @@ function SalaEsperaContent() {
   const [totalWaiting, setTotalWaiting] = useState(0);
   const [maxConcurrent, setMaxConcurrent] = useState(50);
   const [loading, setLoading] = useState(true);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+
+  // 🔑 Guardamos el tiempo restante en segundos reales
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   // Gestión de música/playlist e integración API
   const [currentTrack, setCurrentTrack] = useState(0);
@@ -239,8 +241,13 @@ function SalaEsperaContent() {
 
         if (data.status === "admitted") {
           setQueueEntry(prev => prev ? { ...prev, status: "admitted", expires_at: data.expiresAt } : null);
-          if (data.expiresAt) {
-            startCountdown(new Date(data.expiresAt));
+
+          // 🔑 LÓGICA DE SEGUNDOS: Priorizamos data.remainingSeconds devuelto por el servidor
+          if (typeof data.remainingSeconds === 'number') {
+            setSecondsLeft(data.remainingSeconds);
+          } else if (data.expiresAt) {
+            const fallbackSeconds = Math.max(0, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000));
+            setSecondsLeft(fallbackSeconds);
           }
         } else if (data.status === "expired") {
           router.push(`/EventDetail?id=${eventId}`);
@@ -265,22 +272,29 @@ function SalaEsperaContent() {
     pollRef.current = window.setInterval(checkStatus, 4000);
   }, [eventId, router]);
 
-  const startCountdown = (expiresAt: Date) => {
+  // 🔑 INTERVALO DE CONTEO REGRESIVO BASADO EN SEGUNDOS
+  useEffect(() => {
+    if (secondsLeft === null) return;
+
+    if (secondsLeft <= 0) {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.removeItem(`queue_token_${eventId}`);
+      }
+      router.push(`/EventDetail?id=${eventId}`);
+      return;
+    }
+
     if (timerRef.current) window.clearInterval(timerRef.current);
 
     timerRef.current = window.setInterval(() => {
-      const remaining = Math.max(0, expiresAt.getTime() - Date.now());
-      setTimeLeft(remaining);
-
-      if (remaining === 0) {
-        if (timerRef.current) window.clearInterval(timerRef.current);
-        if (typeof window !== 'undefined' && window.sessionStorage) {
-          window.sessionStorage.removeItem(`queue_token_${eventId}`);
-        }
-        router.push(`/EventDetail?id=${eventId}`);
-      }
+      setSecondsLeft(prev => (prev !== null && prev > 0 ? prev - 1 : 0));
     }, 1000);
-  };
+
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+    };
+  }, [secondsLeft, eventId, router]);
 
   useEffect(() => {
     const initQueue = async () => {
@@ -336,11 +350,11 @@ function SalaEsperaContent() {
     };
   }, [eventId, checkoutUrl, startPolling]);
 
-  const formatTime = (ms: number) => {
-    if (!ms) return "10:00";
-    const secs = Math.floor(ms / 1000);
-    const m = Math.floor(secs / 60).toString().padStart(2, "0");
-    const s = (secs % 60).toString().padStart(2, "0");
+  // Auxiliar para formatear segundos a MM:SS
+  const formatTime = (totalSecs: number | null) => {
+    if (totalSecs === null) return "10:00";
+    const m = Math.floor(totalSecs / 60).toString().padStart(2, "0");
+    const s = (totalSecs % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
 
@@ -372,12 +386,12 @@ function SalaEsperaContent() {
               <ChevronRight className="w-12 h-12 text-green-400" />
             </div>
             <h2 className="text-3xl font-bold text-white mb-2">¡Es tu turno!</h2>
-            <p className="text-slate-400 mb-4">Tenés <span className="text-white font-bold">{formatTime(timeLeft || SESSION_EXPIRE)}</span> para completar tu compra.</p>
+            <p className="text-slate-400 mb-4">Tenés <span className="text-white font-bold">{formatTime(secondsLeft !== null ? secondsLeft : DEFAULT_EXPIRE_SECONDS)}</span> para completar tu compra.</p>
             <div className="w-full bg-slate-800 rounded-full h-2 mb-8 overflow-hidden">
               <motion.div
                 className="h-full bg-green-500 rounded-full"
                 initial={{ width: "100%" }}
-                animate={{ width: `${((timeLeft || SESSION_EXPIRE) / SESSION_EXPIRE) * 100}%` }}
+                animate={{ width: `${((secondsLeft !== null ? secondsLeft : DEFAULT_EXPIRE_SECONDS) / DEFAULT_EXPIRE_SECONDS) * 100}%` }}
                 transition={{ duration: 1 }}
               />
             </div>
