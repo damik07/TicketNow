@@ -1,7 +1,7 @@
 // src/components/pages/Checkout.tsx
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react"; // 🚀 Agregado Suspense
+import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,8 +24,8 @@ interface Event {
   date_time: string;
   banner_url?: string;
   maxTicketsPerUser?: number;
-  type?: string;     // 👈 Agregar esto
-  category?: string; // 👈 Agregar esto
+  type?: string;
+  category?: string;
   pack?: any;
 }
 
@@ -37,7 +37,13 @@ interface CheckoutItem {
   subtotal: number;
 }
 
-// 📦 1. Todo tu componente original pasa a llamarse "CheckoutContent"
+// Función auxiliar para formatear segundos a MM:SS
+function formatSeconds(totalSeconds: number): string {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -45,7 +51,8 @@ function CheckoutContent() {
   const eventId = searchParams.get("event_id");
 
   const [items, setItems] = useState<CheckoutItem[]>([]);
-  const [timeLeft, setTimeLeft] = useState<string>("");
+  // 🔑 Guardamos el tiempo restante en segundos reales
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   const [user, setUser] = useState<User | null>(null);
   const [event, setEvent] = useState<Event | null>(null);
@@ -55,8 +62,6 @@ function CheckoutContent() {
   const [holderName, setHolderName] = useState("");
 
   useEffect(() => {
-    let intervalId: number | null = null;
-
     const loadUserAndCheckoutData = async () => {
       try {
         if (!eventId) return;
@@ -116,6 +121,13 @@ function CheckoutContent() {
         const res = await fetch(`/api/queue/status?token=${encodeURIComponent(rawToken)}&eventId=${eventId}`);
         const queueData = await res.json();
 
+        console.log('🔍 [QUEUE DEBUG CLIENT]:', {
+          responseRemainingSeconds: queueData?.remainingSeconds,
+          responseExpiresAt: queueData?.expiresAt,
+          clientNowISO: new Date().toISOString(),
+          clientNowMs: Date.now(),
+        });
+
         if (queueData.status === 'expired' || queueData.status === 'completed') {
           toast.error('Tu turno de compra expiró o ya fue usado.');
           window.sessionStorage.removeItem(`queue_token_${eventId}`);
@@ -129,24 +141,12 @@ function CheckoutContent() {
           return;
         }
 
-        if (queueData.expiresAt) {
-          const expiration = new Date(queueData.expiresAt).getTime();
-
-          intervalId = window.setInterval(() => {
-            const now = Date.now();
-            const distance = expiration - now;
-
-            if (distance <= 0) {
-              if (intervalId) window.clearInterval(intervalId);
-              toast.error('Tu tiempo ha expirado.');
-              window.sessionStorage.removeItem(`queue_token_${eventId}`);
-              window.location.href = `/EventDetail?id=${eventId}`;
-            } else {
-              const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-              const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-              setTimeLeft(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-            }
-          }, 1000);
+        // 🔑 ASIGNACIÓN DE SEGUNDOS: Damos prioridad estricta a remainingSeconds del Servidor
+        if (typeof queueData.remainingSeconds === 'number') {
+          setSecondsLeft(queueData.remainingSeconds);
+        } else if (queueData.expiresAt) {
+          const fallbackSeconds = Math.max(0, Math.floor((new Date(queueData.expiresAt).getTime() - Date.now()) / 1000));
+          setSecondsLeft(fallbackSeconds);
         }
 
         setLoading(false);
@@ -159,11 +159,27 @@ function CheckoutContent() {
     if (eventId) {
       loadUserAndCheckoutData();
     }
-
-    return () => {
-      if (intervalId) window.clearInterval(intervalId);
-    };
   }, [eventId, router]);
+
+  // 🔑 INTERVALO DE CONTEO REGRESIVO BASADO EN SEGUNDOS
+  useEffect(() => {
+    if (secondsLeft === null) return;
+
+    if (secondsLeft <= 0) {
+      toast.error('Tu tiempo ha expirado.');
+      if (eventId) {
+        window.sessionStorage.removeItem(`queue_token_${eventId}`);
+      }
+      window.location.href = `/EventDetail?id=${eventId}`;
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setSecondsLeft((prev) => (prev !== null && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [secondsLeft, eventId]);
 
   const packSlice = event?.pack ? packCommissionSliceFromPack(event.pack) : null;
 
@@ -185,18 +201,6 @@ function CheckoutContent() {
   const baseTotal = items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
   const finalTotalAmount = finalItems.reduce((sum, item) => sum + item.finalSubtotal, 0);
   const totalServiceCharge = finalItems.reduce((sum, item) => sum + item.serviceCharge, 0);
-
-  useEffect(() => {
-    if (event) {
-      console.log("=== DIAGNÓSTICO DE TICKETNOW ===");
-      console.log("1. Evento completo:", event);
-      console.log("2. Paquete (pack) del evento:", event.pack);
-      console.log("3. Resultado packCommissionSliceFromPack:", packSlice);
-      console.log("4. Items calculados:", finalItems);
-      console.log("5. Totales consolidados:", { baseTotal, totalServiceCharge, finalTotalAmount });
-      console.log("===============================");
-    }
-  }, [event, items]);
 
   const handlePurchase = async () => {
     if (!user || !event) {
@@ -259,7 +263,6 @@ function CheckoutContent() {
         setSuccess(true);
         toast.success("¡Compra simulada con éxito y entradas enviadas por mail!");
       } else {
-        // 🔑 Tomamos el punto de inicio de producción o sandbox según lo que devuelva el backend
         const redirectUrl = payload.sandboxInitPoint || payload.initPoint;
 
         if (redirectUrl) {
@@ -314,7 +317,7 @@ function CheckoutContent() {
           <ArrowLeft className="w-4 h-4" /> Volver al evento
         </Button>
 
-        {timeLeft && (
+        {secondsLeft !== null && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -325,7 +328,7 @@ function CheckoutContent() {
               <span className="font-medium">Completá tu compra antes de que expire tu reserva:</span>
             </div>
             <span className="font-mono font-bold bg-amber-500/20 px-3 py-1 rounded-xl text-base text-amber-300 shadow-inner">
-              {timeLeft}
+              {formatSeconds(secondsLeft)}
             </span>
           </motion.div>
         )}
@@ -347,7 +350,6 @@ function CheckoutContent() {
                     <h3 className="font-semibold text-white">{event.title}</h3>
                     <p className="text-xs text-slate-500 mb-1">{event.location_name}</p>
 
-                    {/* 💡 Badges basados en los campos reales de tu DB */}
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {event.type && (
                         <span className="inline-flex items-center gap-1 text-[10px] uppercase font-semibold bg-violet-500/10 text-violet-300 border border-violet-500/20 px-2 py-0.5 rounded-md">
@@ -455,7 +457,6 @@ function CheckoutContent() {
   );
 }
 
-// 🚀 2. El export por defecto queda limpio y envuelto en Suspense con un esqueleto de carga
 export default function Checkout() {
   return (
     <Suspense

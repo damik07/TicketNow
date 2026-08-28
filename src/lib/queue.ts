@@ -100,7 +100,7 @@ async function nextWaitingPosition(eventId: string) {
 }
 
 export type JoinQueueResult =
-  | { action: 'allow_checkout'; sessionToken: string; expiresAt: string }
+  | { action: 'allow_checkout'; sessionToken: string; expiresAt: string; remainingSeconds: number }
   | { action: 'redirect_to_queue'; sessionToken: string; position: number }
   | { action: 'rejected_limit_reached'; error: string }
 
@@ -133,7 +133,7 @@ export async function joinQueue(eventId: string, userId: string): Promise<JoinQu
   const now = new Date()
   await expireStaleAdmissions(eventId, now)
 
-  // Turno activo existente
+  // 1. Verificar si tiene un turno de compra ACTIVO (no vencido)
   const activeAdmitted = await prisma.queueEntry.findFirst({
     where: {
       eventId,
@@ -143,15 +143,18 @@ export async function joinQueue(eventId: string, userId: string): Promise<JoinQu
     },
     orderBy: { admittedAt: 'desc' },
   })
-  if (activeAdmitted) {
+
+  if (activeAdmitted && activeAdmitted.expiresAt) {
+    const remainingSeconds = Math.max(0, Math.floor((activeAdmitted.expiresAt.getTime() - now.getTime()) / 1000))
     return {
       action: 'allow_checkout',
       sessionToken: activeAdmitted.sessionToken,
-      expiresAt: activeAdmitted.expiresAt!.toISOString(),
+      expiresAt: activeAdmitted.expiresAt.toISOString(),
+      remainingSeconds,
     }
   }
 
-  // Ya en fila
+  // 2. Verificar si YA está en fila esperando (waiting)
   const waitingEntry = await prisma.queueEntry.findFirst({
     where: { eventId, userId, status: 'waiting' },
     orderBy: { createdAt: 'asc' },
@@ -163,6 +166,15 @@ export async function joinQueue(eventId: string, userId: string): Promise<JoinQu
       position: waitingEntry.position,
     }
   }
+
+  // 3. LIMPIEZA CLAVE: Si tenía sesiones expiradas o inactivas previas para este evento, las eliminamos para no romper la restricción única de DB
+  await prisma.queueEntry.deleteMany({
+    where: {
+      eventId,
+      userId,
+      status: { in: ['expired', 'waiting'] },
+    },
+  })
 
   const activeCount = await countActiveAdmitted(eventId, now)
   const hasSlot = activeCount < event.maxConcurrent
@@ -196,6 +208,7 @@ export async function joinQueue(eventId: string, userId: string): Promise<JoinQu
         action: 'allow_checkout',
         sessionToken: token,
         expiresAt: expiresAt.toISOString(),
+        remainingSeconds: 600, // 10 minutos
       }
     }
     // Perdió carrera: cae a waiting abajo
@@ -252,7 +265,7 @@ export async function getQueueStatus(sessionToken: string, eventId: string) {
       status: 'admitted' as const,
       expiresAt: entry.expiresAt.toISOString(),
       remainingSeconds,
-      sessionToken: entry.sessionToken, // 👈 Devolver para asegurar el token activo
+      sessionToken: entry.sessionToken,
       maxConcurrent: (
         await prisma.event.findUnique({
           where: { id: eventId },
@@ -313,7 +326,6 @@ export async function validateCheckoutAccess(
     return { ok: false as const, reason: 'invalid_token' }
   }
 
-  // Permitir reingreso si el pago no fue confirmado exitosamente
   if (entry.status === 'completed') {
     return { ok: false as const, reason: 'already_completed' }
   }
