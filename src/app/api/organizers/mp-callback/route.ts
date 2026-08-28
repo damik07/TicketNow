@@ -51,6 +51,14 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
 
+    console.log('🔍 [MP OAuth Response]:', {
+      live_mode: data.live_mode,            // 👈 Debe ser FALSE para pruebas
+      user_id: data.user_id,
+      token_type: data.token_type,
+      public_key: data.public_key,
+      // access_token: data.access_token    // Se recomienda no loguear el token entero por seguridad
+    })
+
     if (!response.ok) {
       console.error('[MP OAuth Exchange Failure]:', {
         status: response.status,
