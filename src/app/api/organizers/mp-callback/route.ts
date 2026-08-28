@@ -19,14 +19,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
-    const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+    const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || '').trim();
 
     if (!clientId || !clientSecret) {
       console.error('[MP OAuth Callback Error]: Faltan variables MERCADO_PAGO_CLIENT_ID o MERCADO_PAGO_CLIENT_SECRET.');
       return NextResponse.redirect(`${appUrl}/dashboard?mp_error=server_configuration_error`);
     }
 
-    const isSandbox = process.env.MERCADO_PAGO_ENV === 'sandbox' || clientSecret.startsWith('TEST-');
+    const isSandbox = process.env.MERCADO_PAGO_ENV === 'sandbox';
 
     const bodyParams = new URLSearchParams({
       client_id: clientId,
@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
     if (isSandbox) {
       bodyParams.append('test_token', 'true');
     }
+
+    console.log('[MP OAuth token request]', bodyParams.toString());
 
     const response = await fetch('https://api.mercadopago.com/oauth/token', {
       method: 'POST',
