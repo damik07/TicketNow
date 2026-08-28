@@ -246,9 +246,12 @@ export async function getQueueStatus(sessionToken: string, eventId: string) {
       return { status: 'expired' as const, message: 'Tiempo de compra agotado' }
     }
 
+    const remainingSeconds = Math.max(0, Math.floor((entry.expiresAt.getTime() - now.getTime()) / 1000))
+
     return {
       status: 'admitted' as const,
       expiresAt: entry.expiresAt.toISOString(),
+      remainingSeconds,
       sessionToken: entry.sessionToken, // 👈 Devolver para asegurar el token activo
       maxConcurrent: (
         await prisma.event.findUnique({
