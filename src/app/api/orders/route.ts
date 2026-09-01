@@ -290,6 +290,8 @@ export async function POST(request: NextRequest) {
         hasInitPoint: Boolean(mpPreference.init_point),
       })
 
+      console.log("preference body: " + JSON.stringify(preferenceBody))
+
       return NextResponse.json({
         order,
         initPoint: mpPreference.init_point,
