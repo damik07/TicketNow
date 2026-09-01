@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
 
     const { type, eventId, ticketId, quantity = 1, monto, title } = await request.json();
 
-    // Validación según el tipo de producto
     if (!monto || monto <= 0) {
       return NextResponse.json({ error: "Monto inválido" }, { status: 400 });
     }
@@ -27,9 +26,13 @@ export async function POST(request: NextRequest) {
     const preferenceFactory = new Preference(client);
 
     const isEntrada = type === 'ENTRADA';
-
-    // 1. Configuramos URLs de retorno según el contexto de compra
     const redirectPath = isEntrada ? '/MisEntradas' : '/MisConsumiciones';
+
+    // Verificación en servidor si se están usando credenciales de prueba
+    const isTestToken = accessToken.startsWith("TEST-");
+    if (isTestToken) {
+      console.warn("[MP Warning]: Se está utilizando un Access Token de prueba (TEST-).");
+    }
 
     const preference = await preferenceFactory.create({
       body: {
@@ -42,9 +45,8 @@ export async function POST(request: NextRequest) {
             currency_id: "ARS",
           },
         ],
-        // 🔑 METADATOS: El Webhook leerá 'type' para saber qué tabla/registro actualizar en Prisma
         metadata: {
-          type: type || 'ENTRADA', // 'ENTRADA' | 'CONSUMISION'
+          type: type || 'ENTRADA',
           event_id: eventId || null,
           ticket_id: ticketId || null,
           user_id: session.user.id,
@@ -56,14 +58,20 @@ export async function POST(request: NextRequest) {
           pending: `${baseUrl}${redirectPath}?payment=pending`,
         },
         auto_return: "approved",
-        notification_url: `${baseUrl}/api/webhooks/mercadopago`,
+        
+        // El webhook solo debe enviarse si la URL base corre sobre HTTPS (exigencia de Mercado Pago)
+        ...(baseUrl.startsWith("https://") && {
+          notification_url: `${baseUrl}/api/webhooks/mercadopago`,
+        }),
       },
     });
 
+    // Para evitar que el frontend tome la URL de Sandbox,
+    // devolvemos explícitamente `init_point` como la URL principal de pago
     return NextResponse.json({ 
       id: preference.id, 
-      init_point: preference.init_point,
-      sandbox_init_point: preference.sandbox_init_point,
+      initPoint: preference.init_point, // URL oficial de Producción
+      sandboxInitPoint: preference.sandbox_init_point,
     });
 
   } catch (error: any) {

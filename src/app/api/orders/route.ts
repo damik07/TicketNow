@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
 
       const disableMarketplaceFee = process.env.MERCADO_PAGO_DISABLE_MARKETPLACE_FEE === 'true'
 
-      console.log("disableMarketplaceFee: "+ disableMarketplaceFee)
+      console.log("disableMarketplaceFee: " + disableMarketplaceFee)
 
       let organizerAccessToken: string
       try {
@@ -214,6 +214,10 @@ export async function POST(request: NextRequest) {
       // 3. Inferimos el tipo exacto del body soportado por la versión del SDK
       type PreferenceBody = Parameters<typeof preference.create>[0]['body']
 
+      // 1. Definir la condición claramente
+      const shouldApplyMarketplaceFee = !disableMarketplaceFee && totalServiceCharge > 0
+
+      // 2. Construir el PreferenceBody omitiendo la propiedad por completo si no aplica
       const preferenceBody: PreferenceBody = {
         items: pricedItems.map((item) => ({
           id: item.ticketTypeId,
@@ -237,14 +241,13 @@ export async function POST(request: NextRequest) {
           pending: `${appUrl}/MisEntradas?status=pending`,
         },
         auto_return: 'approved',
-      }
 
-      if (!disableMarketplaceFee && totalServiceCharge > 0) {
-        preferenceBody.marketplace_fee = totalServiceCharge
-      }
+        // 💡 Si no se cumple la condición, la llave 'marketplace_fee' NUNCA formará parte del objeto
+        ...(shouldApplyMarketplaceFee && { marketplace_fee: totalServiceCharge }),
 
-      if (webhookBaseUrl.startsWith('https://')) {
-        preferenceBody.notification_url = `${webhookBaseUrl}/api/webhooks/mercadopago`
+        ...(webhookBaseUrl.startsWith('https://') && {
+          notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
+        }),
       }
 
       let mpPreference
