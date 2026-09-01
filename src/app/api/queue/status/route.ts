@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await getQueueStatus(rawToken, eventId)
+    console.log('data', data)
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error en queue/status:', error)
