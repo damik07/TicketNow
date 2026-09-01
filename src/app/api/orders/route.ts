@@ -226,10 +226,10 @@ export async function POST(request: NextRequest) {
           unit_price: item.unitPrice,
           currency_id: 'ARS',
         })),
-        payer: {
-          email: session.user.email || undefined,
-          name: session.user.name || undefined,
-        },
+        //payer: {
+        //  email: session.user.email || undefined,
+        //  name: session.user.name || undefined,
+        //},
         external_reference: order.id,
         metadata: {
           order_id: order.id,

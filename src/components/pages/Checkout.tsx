@@ -135,6 +135,8 @@ function CheckoutContent() {
           return;
         }
 
+        console.log('🚨 [QUEUE STATUS RECEIVED]:', queueData);
+        
         if (queueData.status !== 'admitted') {
           toast.error('Aún no es tu turno. Te redirigimos a la sala de espera.');
           router.push(`/SalaEspera?event_id=${eventId}&checkout_url=${encodeURIComponent(`/Checkout?event_id=${eventId}`)}`);
