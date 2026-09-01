@@ -80,3 +80,49 @@ export async function refreshOrganizerMpToken(organizerId: string): Promise<stri
 
   return updatedOrganizer.mercadopagoAccessToken;
 }
+
+/**
+ * Devuelve el access token OAuth del organizador, renovándolo si está por vencer.
+ */
+export async function getValidOrganizerAccessToken(organizerId: string): Promise<string> {
+  const organizer = await prisma.organizer.findUnique({
+    where: { id: organizerId },
+    select: {
+      mercadopagoAccessToken: true,
+      mercadopagoExpiresAt: true,
+      mercadopagoRefreshToken: true,
+    },
+  });
+
+  if (!organizer?.mercadopagoAccessToken) {
+    throw new Error('El organizador no tiene Mercado Pago vinculado.');
+  }
+
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const expiresAt = organizer.mercadopagoExpiresAt?.getTime() ?? 0;
+  const shouldRefresh =
+    organizer.mercadopagoRefreshToken &&
+    expiresAt > 0 &&
+    expiresAt - Date.now() < oneDayMs;
+
+  if (shouldRefresh) {
+    return refreshOrganizerMpToken(organizerId);
+  }
+
+  return organizer.mercadopagoAccessToken;
+}
+
+/**
+ * URL de Checkout Pro según el entorno.
+ * En pruebas con usuarios test, MP recomienda init_point (producción), no sandbox_init_point.
+ */
+export function resolveMpCheckoutUrl(
+  initPoint?: string | null,
+  sandboxInitPoint?: string | null
+): string | null {
+  const useSandbox = process.env.NEXT_PUBLIC_MP_USE_SANDBOX_INITPOINT === 'true';
+  if (useSandbox) {
+    return sandboxInitPoint || initPoint || null;
+  }
+  return initPoint || sandboxInitPoint || null;
+}

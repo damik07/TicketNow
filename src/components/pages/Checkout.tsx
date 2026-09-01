@@ -263,7 +263,8 @@ function CheckoutContent() {
         setSuccess(true);
         toast.success("¡Compra simulada con éxito y entradas enviadas por mail!");
       } else {
-        const redirectUrl = payload.sandboxInitPoint || payload.initPoint;
+        // MP recomienda init_point (prod) con usuarios test del vendedor; sandbox_init_point solo si lo activás explícitamente.
+        const redirectUrl = payload.initPoint || payload.sandboxInitPoint;
 
         if (redirectUrl) {
           window.location.href = redirectUrl;

@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { orderLineBuyerUnitPrice, packCommissionSliceFromPack, roundMoney } from '@/lib/pack-commission'
+import {
+  orderLineBuyerUnitPrice,
+  packCommissionSliceFromPack,
+  roundMoney,
+  ticketPlatformFeeUnit,
+} from '@/lib/pack-commission'
 import { completeQueueSession, validateCheckoutAccess } from '@/lib/queue'
 
-import { mpClient } from '@/lib/mercadopago'
-import { MercadoPagoConfig, Preference } from 'mercadopago'
+import { getValidOrganizerAccessToken, mpClient } from '@/lib/mercadopago'
+import { Preference } from 'mercadopago'
 
 export const dynamic = 'force-dynamic';
 
@@ -173,15 +178,33 @@ export async function POST(request: NextRequest) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const webhookBaseUrl = process.env.MERCADO_PAGO_WEBHOOK_URL || appUrl
 
-      // 1. Obtener la comisión según tu modelo EventPack (commissionTickets)
-      const commissionPercent = event.pack?.commissionTickets ?? 0
+      // Comisión de TicketNow sobre precio de lista (no sobre el subtotal ya incrementado)
+      const packSlice = packCommissionSliceFromPack(event.pack)
+      const totalServiceCharge = roundMoney(
+        pricedItems.reduce((acc, item) => {
+          const ticketType = event.ticketTypes.find((tt) => tt.id === item.ticketTypeId)
+          const listPrice = ticketType?.price ?? 0
+          const unitFee = ticketPlatformFeeUnit(listPrice, packSlice)
+          return acc + roundMoney(unitFee * item.quantity)
+        }, 0)
+      )
 
-      // Calcular el service charge total cobrado por TicketNow
-      const totalServiceCharge = pricedItems.reduce((acc, item) => {
-        return acc + (item.subtotal * (commissionPercent / 100))
-      }, 0)
+      const disableMarketplaceFee = process.env.MERCADO_PAGO_DISABLE_MARKETPLACE_FEE === 'true'
 
-      const preferenceBody: any = {
+      let organizerAccessToken: string
+      try {
+        organizerAccessToken = await getValidOrganizerAccessToken(event.organizer.id)
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              'El organizador del evento debe vincular Mercado Pago antes de vender entradas.',
+          },
+          { status: 400 }
+        )
+      }
+
+      const preferenceBody: Record<string, unknown> = {
         items: pricedItems.map((item) => ({
           id: item.ticketTypeId,
           title: `${event.title} - ${item.ticketTypeName}`,
@@ -194,14 +217,20 @@ export async function POST(request: NextRequest) {
           name: session.user.name || undefined,
         },
         external_reference: order.id,
-        // 💡 Definir la comisión de la Plataforma (TicketNow)
-        marketplace_fee: roundMoney(totalServiceCharge),
+        metadata: {
+          order_id: order.id,
+          event_id: eventId,
+        },
         back_urls: {
           success: `${appUrl}/MisEntradas?status=success`,
-          failure: `${appUrl}/Checkout?event_id=${eventId}&session_token=${sessionToken}&status=failure`, // 👈 AGREGAR session_token
+          failure: `${appUrl}/Checkout?event_id=${eventId}&session_token=${sessionToken}&status=failure`,
           pending: `${appUrl}/MisEntradas?status=pending`,
         },
         auto_return: 'approved',
+      }
+
+      if (!disableMarketplaceFee && totalServiceCharge > 0) {
+        preferenceBody.marketplace_fee = totalServiceCharge
       }
 
       if (webhookBaseUrl.startsWith('https://')) {
@@ -210,17 +239,47 @@ export async function POST(request: NextRequest) {
 
       const preference = new Preference(mpClient)
 
-      // 💡 Obtener el token OAuth del Organizador
-      // Reemplaza 'mercadopagoAccessToken' por el nombre exacto de la columna en tu modelo Organizer
-      const organizerAccessToken = (event.organizer as any)?.mercadopagoAccessToken || (event.organizer as any)?.mpAccessToken
-
-      const mpPreference = await preference.create({
-        body: preferenceBody,
-        ...(organizerAccessToken && {
+      let mpPreference
+      try {
+        mpPreference = await preference.create({
+          body: preferenceBody,
           requestOptions: {
-            accessToken: organizerAccessToken
-          }
+            accessToken: organizerAccessToken,
+          },
         })
+      } catch (mpError: unknown) {
+        const mpMessage =
+          mpError instanceof Error
+            ? mpError.message
+            : typeof mpError === 'object' && mpError !== null && 'message' in mpError
+              ? String((mpError as { message: unknown }).message)
+              : 'Error desconocido'
+
+        console.error('[MP Preference Error]:', {
+          orderId: order.id,
+          organizerId: event.organizer.id,
+          totalAmount,
+          marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
+          mpMessage,
+        })
+
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { paymentStatus: 'cancelado' },
+        })
+
+        return NextResponse.json(
+          { error: 'No se pudo generar la pasarela de Mercado Pago. Verificá la vinculación del organizador.' },
+          { status: 502 }
+        )
+      }
+
+      console.log('[MP Preference Created]:', {
+        orderId: order.id,
+        preferenceId: mpPreference.id,
+        totalAmount,
+        marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
+        hasInitPoint: Boolean(mpPreference.init_point),
       })
 
       return NextResponse.json({
@@ -229,8 +288,8 @@ export async function POST(request: NextRequest) {
         sandboxInitPoint: mpPreference.sandbox_init_point,
         packApplied: {
           name: event.pack?.name,
-          isAbsorbed: event.pack?.ticketPercentApply === 'DEDUCE_DEL_PRECIO'
-        }
+          isAbsorbed: event.pack?.ticketPercentApply === 'DEDUCE_DEL_PRECIO',
+        },
       })
     }
 
