@@ -10,12 +10,10 @@ import {
 } from '@/lib/pack-commission'
 import { completeQueueSession, validateCheckoutAccess } from '@/lib/queue'
 
-import { getValidOrganizerAccessToken, mpClient } from '@/lib/mercadopago'
-import { Preference } from 'mercadopago'
+import { getValidOrganizerAccessToken } from '@/lib/mercadopago'
+import { MercadoPagoConfig, Preference } from 'mercadopago'
 
 export const dynamic = 'force-dynamic';
-
-
 
 export async function GET(request: NextRequest) {
   try {
@@ -94,7 +92,7 @@ export async function POST(request: NextRequest) {
       include: {
         ticketTypes: true,
         pack: true,
-        organizer: true // 👈 Asegurarse de incluir al organizador para obtener su token OAuth
+        organizer: true
       },
     })
 
@@ -178,7 +176,6 @@ export async function POST(request: NextRequest) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const webhookBaseUrl = process.env.MERCADO_PAGO_WEBHOOK_URL || appUrl
 
-      // Comisión de TicketNow sobre precio de lista (no sobre el subtotal ya incrementado)
       const packSlice = packCommissionSliceFromPack(event.pack)
       const totalServiceCharge = roundMoney(
         pricedItems.reduce((acc, item) => {
@@ -204,7 +201,18 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const preferenceBody: Record<string, unknown> = {
+      // 1. Cliente instanciado dinámicamente con el Access Token del organizador
+      const organizerMpClient = new MercadoPagoConfig({
+        accessToken: organizerAccessToken,
+      })
+
+      // 2. Pasamos el cliente a la clase Preference
+      const preference = new Preference(organizerMpClient)
+
+      // 3. Inferimos el tipo exacto del body soportado por la versión del SDK
+      type PreferenceBody = Parameters<typeof preference.create>[0]['body']
+
+      const preferenceBody: PreferenceBody = {
         items: pricedItems.map((item) => ({
           id: item.ticketTypeId,
           title: `${event.title} - ${item.ticketTypeName}`,
@@ -237,15 +245,10 @@ export async function POST(request: NextRequest) {
         preferenceBody.notification_url = `${webhookBaseUrl}/api/webhooks/mercadopago`
       }
 
-      const preference = new Preference(mpClient)
-
       let mpPreference
       try {
         mpPreference = await preference.create({
           body: preferenceBody,
-          requestOptions: {
-            accessToken: organizerAccessToken,
-          },
         })
       } catch (mpError: unknown) {
         const mpMessage =
