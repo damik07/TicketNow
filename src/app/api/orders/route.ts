@@ -188,6 +188,8 @@ export async function POST(request: NextRequest) {
 
       const disableMarketplaceFee = process.env.MERCADO_PAGO_DISABLE_MARKETPLACE_FEE === 'true'
 
+      console.log("disableMarketplaceFee: "+ disableMarketplaceFee)
+
       let organizerAccessToken: string
       try {
         organizerAccessToken = await getValidOrganizerAccessToken(event.organizer.id)
