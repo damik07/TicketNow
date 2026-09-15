@@ -126,6 +126,16 @@ export async function POST(request: NextRequest) {
           console.log(`[MP Webhook] Orden ${orderId} ya estaba siendo procesada por otro evento.`);
         }
       }
+    } else {
+      console.warn('[MP Webhook] Pago no aprobado:', {
+        paymentId: dataId,
+        orderId,
+        status: paymentData.status,
+        statusDetail: paymentData.status_detail,
+        paymentMethodId: paymentData.payment_method_id,
+        paymentTypeId: paymentData.payment_type_id,
+        transactionAmount: paymentData.transaction_amount,
+      })
     }
 
     return NextResponse.json({ success: true }, { status: 200 })

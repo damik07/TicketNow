@@ -187,8 +187,7 @@ export async function POST(request: NextRequest) {
       )
 
       const disableMarketplaceFee = process.env.MERCADO_PAGO_DISABLE_MARKETPLACE_FEE === 'true'
-
-      console.log("disableMarketplaceFee: " + disableMarketplaceFee)
+      const isSandbox = process.env.MERCADO_PAGO_ENV === 'sandbox'
 
       let organizerAccessToken: string
       try {
@@ -241,9 +240,15 @@ export async function POST(request: NextRequest) {
           pending: `${appUrl}/MisEntradas?status=pending`,
         },
         auto_return: 'approved',
+        payment_methods: {
+          installments: 1,
+        },
 
         // 💡 Si no se cumple la condición, la llave 'marketplace_fee' NUNCA formará parte del objeto
         ...(shouldApplyMarketplaceFee && { marketplace_fee: totalServiceCharge }),
+
+        // En sandbox simplifica el flujo (aprobado/rechazado, sin pending)
+        ...(isSandbox && { binary_mode: true }),
 
         ...(webhookBaseUrl.startsWith('https://') && {
           notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
@@ -282,20 +287,35 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      const collectorId =
+        (mpPreference as { collector_id?: number }).collector_id ??
+        event.organizer.mercadopagoUserId ??
+        null
+
       console.log('[MP Preference Created]:', {
         orderId: order.id,
         preferenceId: mpPreference.id,
         totalAmount,
         marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
         hasInitPoint: Boolean(mpPreference.init_point),
+        collectorId,
+        organizerMpUserId: event.organizer.mercadopagoUserId,
+        tokenPrefix: organizerAccessToken.slice(0, 5),
+        isSandbox,
+        binaryMode: isSandbox,
       })
-
-      console.log("preference body: " + JSON.stringify(preferenceBody))
 
       return NextResponse.json({
         order,
         initPoint: mpPreference.init_point,
         sandboxInitPoint: mpPreference.sandbox_init_point,
+        ...(isSandbox && {
+          mpDebug: {
+            collectorId,
+            organizerMpUserId: event.organizer.mercadopagoUserId,
+            hint: 'El comprador test debe ser un usuario distinto al vendedor (collectorId).',
+          },
+        }),
         packApplied: {
           name: event.pack?.name,
           isAbsorbed: event.pack?.ticketPercentApply === 'DEDUCE_DEL_PRECIO',
