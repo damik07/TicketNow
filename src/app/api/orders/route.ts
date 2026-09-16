@@ -295,15 +295,20 @@ export async function POST(request: NextRequest) {
       console.log('[MP Preference Created]:', {
         orderId: order.id,
         preferenceId: mpPreference.id,
+        // 🎯 URLs de inicio de checkout
+        initPoint: mpPreference.init_point,
+        sandboxInitPoint: mpPreference.sandbox_init_point,
+        // 🎯 Referencia externa y pagador
+        externalReference: mpPreference.external_reference,
+        // 🎯 Totales y configuración
         totalAmount,
         marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
-        hasInitPoint: Boolean(mpPreference.init_point),
         collectorId,
         organizerMpUserId: event.organizer.mercadopagoUserId,
         tokenPrefix: organizerAccessToken.slice(0, 5),
         isSandbox,
         binaryMode: isSandbox,
-      })
+      });
 
       return NextResponse.json({
         order,
