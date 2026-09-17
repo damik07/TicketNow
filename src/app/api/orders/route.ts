@@ -216,19 +216,16 @@ export async function POST(request: NextRequest) {
       // 1. Definir la condición claramente
       const shouldApplyMarketplaceFee = !disableMarketplaceFee && totalServiceCharge > 0
 
-      // 2. Construir el PreferenceBody omitiendo la propiedad por completo si no aplica
+      // 2. Construir el PreferenceBody asegurando tipos numéricos exactos y limpiando URLs/métodos
       const preferenceBody: PreferenceBody = {
         items: pricedItems.map((item) => ({
           id: item.ticketTypeId,
           title: `${event.title} - ${item.ticketTypeName}`,
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
+          // 💡 PUNTUAL 1: Garantizamos tipos numéricos estrictos
+          quantity: Math.floor(Number(item.quantity)),
+          unit_price: Number(item.unitPrice),
           currency_id: 'ARS',
         })),
-        //payer: {
-        //  email: session.user.email || undefined,
-        //  name: session.user.name || undefined,
-        //},
         external_reference: order.id,
         metadata: {
           order_id: order.id,
@@ -236,16 +233,19 @@ export async function POST(request: NextRequest) {
         },
         back_urls: {
           success: `${appUrl}/MisEntradas?status=success`,
-          failure: `${appUrl}/Checkout?event_id=${eventId}&session_token=${sessionToken}&status=failure`,
+          // 💡 PUNTUAL 2: Se quitó session_token del querystring por seguridad/limpieza
+          failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
           pending: `${appUrl}/MisEntradas?status=pending`,
         },
         auto_return: 'approved',
-        payment_methods: {
-          installments: 1,
-        },
+        
+        // 💡 PUNTUAL 3: Omitimos temporalmente payment_methods para descartar restricciones en Sandbox
+        // payment_methods: {
+        //   installments: 1,
+        // },
 
-        // 💡 Si no se cumple la condición, la llave 'marketplace_fee' NUNCA formará parte del objeto
-        ...(shouldApplyMarketplaceFee && { marketplace_fee: totalServiceCharge }),
+        // Si no se cumple la condición, la llave 'marketplace_fee' NUNCA formará parte del objeto
+        ...(shouldApplyMarketplaceFee && { marketplace_fee: Number(totalServiceCharge) }),
 
         // En sandbox simplifica el flujo (aprobado/rechazado, sin pending)
         ...(isSandbox && { binary_mode: true }),
@@ -295,12 +295,9 @@ export async function POST(request: NextRequest) {
       console.log('[MP Preference Created]:', {
         orderId: order.id,
         preferenceId: mpPreference.id,
-        // 🎯 URLs de inicio de checkout
         initPoint: mpPreference.init_point,
         sandboxInitPoint: mpPreference.sandbox_init_point,
-        // 🎯 Referencia externa y pagador
         externalReference: mpPreference.external_reference,
-        // 🎯 Totales y configuración
         totalAmount,
         marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
         collectorId,
@@ -308,6 +305,7 @@ export async function POST(request: NextRequest) {
         tokenPrefix: organizerAccessToken.slice(0, 5),
         isSandbox,
         binaryMode: isSandbox,
+        preferenceBody: JSON.stringify(preferenceBody),
       });
 
       return NextResponse.json({
