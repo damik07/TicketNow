@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (isSandbox) {
-      bodyParams.append('test_token', 'true');
+      bodyParams.append('test_token', 'false');  //debe ser true, pero para probar conexión lo pongo false
     }
 
     console.log('[MP OAuth token request]', bodyParams.toString());
