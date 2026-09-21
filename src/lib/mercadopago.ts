@@ -31,7 +31,11 @@ export async function refreshOrganizerMpToken(organizerId: string): Promise<stri
   }
 
   const clientId = (process.env.MERCADO_PAGO_CLIENT_ID || '').trim();
-  const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+  const clientSecret = (process.env.MERCADO_PAGO_CLIENT_SECRET || '').trim();
+
+  if (!clientId || !clientSecret) {
+    throw new Error('Faltan MERCADO_PAGO_CLIENT_ID o MERCADO_PAGO_CLIENT_SECRET en las variables de entorno.');
+  }
 
   const bodyParams = new URLSearchParams({
     client_id: clientId,
@@ -39,9 +43,6 @@ export async function refreshOrganizerMpToken(organizerId: string): Promise<stri
     grant_type: 'refresh_token',
     refresh_token: organizer.mercadopagoRefreshToken,
   });
-
-  // ⚠️ NOTA: No agregamos 'test_token: true' para asegurar que Mercado Pago devuelva 
-  // tokens de Producción (APP_USR-...) que permiten generar init_point reales.
 
   const response = await fetch('https://api.mercadopago.com/oauth/token', {
     method: 'POST',
@@ -111,19 +112,11 @@ export async function getValidOrganizerAccessToken(organizerId: string): Promise
 }
 
 /**
- * URL de Checkout Pro según el entorno.
- * En producción se prioriza SIEMPRE init_point.
+ * URL de Checkout Pro: Retorna SIEMPRE initPoint.
  */
 export function resolveMpCheckoutUrl(
   initPoint?: string | null,
   sandboxInitPoint?: string | null
 ): string | null {
-  const useSandbox = process.env.NEXT_PUBLIC_MP_USE_SANDBOX_INITPOINT === 'true';
-  
-  if (useSandbox) {
-    return sandboxInitPoint || initPoint || null;
-  }
-  
-  // Por defecto se da prioridad estricta al punto de inicio de producción
   return initPoint || sandboxInitPoint || null;
 }
