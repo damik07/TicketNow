@@ -168,9 +168,8 @@ export async function POST(request: NextRequest) {
       },
     })
 
-
     // ==========================================
-    // 💡 CASO A: PAGO REAL CON MERCADO PAGO (SPLIT PAYMENT)
+    // 💡 CASO A: PAGO REAL O PRUEBA CON MERCADO PAGO (CHECKOUT PRO)
     // ==========================================
     if (!isSimulated && paymentMethod === 'mercadopago') {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -187,7 +186,6 @@ export async function POST(request: NextRequest) {
       )
 
       const disableMarketplaceFee = process.env.MERCADO_PAGO_DISABLE_MARKETPLACE_FEE === 'true'
-      const isSandbox = process.env.MERCADO_PAGO_ENV === 'sandbox'
 
       let organizerAccessToken: string
       try {
@@ -213,15 +211,13 @@ export async function POST(request: NextRequest) {
       // 3. Inferimos el tipo exacto del body soportado por la versión del SDK
       type PreferenceBody = Parameters<typeof preference.create>[0]['body']
 
-      // 1. Definir la condición claramente
       const shouldApplyMarketplaceFee = !disableMarketplaceFee && totalServiceCharge > 0
 
-      // 2. Construir el PreferenceBody asegurando tipos numéricos exactos y limpiando URLs/métodos
+      // 4. Construir el PreferenceBody exacto según la especificación de Checkout Pro
       const preferenceBody: PreferenceBody = {
         items: pricedItems.map((item) => ({
           id: item.ticketTypeId,
           title: `${event.title} - ${item.ticketTypeName}`,
-          // 💡 PUNTUAL 1: Garantizamos tipos numéricos estrictos
           quantity: Math.floor(Number(item.quantity)),
           unit_price: Number(item.unitPrice),
           currency_id: 'ARS',
@@ -233,22 +229,12 @@ export async function POST(request: NextRequest) {
         },
         back_urls: {
           success: `${appUrl}/MisEntradas?status=success`,
-          // 💡 PUNTUAL 2: Se quitó session_token del querystring por seguridad/limpieza
           failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
           pending: `${appUrl}/MisEntradas?status=pending`,
         },
         auto_return: 'approved',
-        
-        // 💡 PUNTUAL 3: Omitimos temporalmente payment_methods para descartar restricciones en Sandbox
-        // payment_methods: {
-        //   installments: 1,
-        // },
 
-        // Si no se cumple la condición, la llave 'marketplace_fee' NUNCA formará parte del objeto
         ...(shouldApplyMarketplaceFee && { marketplace_fee: Number(totalServiceCharge) }),
-
-        // En sandbox simplifica el flujo (aprobado/rechazado, sin pending)
-        ...(isSandbox && { binary_mode: true }),
 
         ...(webhookBaseUrl.startsWith('https://') && {
           notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
@@ -287,38 +273,20 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const collectorId =
-        (mpPreference as { collector_id?: number }).collector_id ??
-        event.organizer.mercadopagoUserId ??
-        null
-
       console.log('[MP Preference Created]:', {
         orderId: order.id,
         preferenceId: mpPreference.id,
         initPoint: mpPreference.init_point,
-        sandboxInitPoint: mpPreference.sandbox_init_point,
         externalReference: mpPreference.external_reference,
         totalAmount,
         marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
-        collectorId,
-        organizerMpUserId: event.organizer.mercadopagoUserId,
         tokenPrefix: organizerAccessToken.slice(0, 5),
-        isSandbox,
-        binaryMode: isSandbox,
-        preferenceBody: JSON.stringify(preferenceBody),
       });
 
+      // Retornamos SIEMPRE initPoint (según indicación oficial de MP)
       return NextResponse.json({
         order,
         initPoint: mpPreference.init_point,
-        sandboxInitPoint: mpPreference.sandbox_init_point,
-        ...(isSandbox && {
-          mpDebug: {
-            collectorId,
-            organizerMpUserId: event.organizer.mercadopagoUserId,
-            hint: 'El comprador test debe ser un usuario distinto al vendedor (collectorId).',
-          },
-        }),
         packApplied: {
           name: event.pack?.name,
           isAbsorbed: event.pack?.ticketPercentApply === 'DEDUCE_DEL_PRECIO',
