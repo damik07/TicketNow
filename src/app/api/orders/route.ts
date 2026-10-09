@@ -224,8 +224,8 @@ export async function POST(request: NextRequest) {
         })),
         // 🔑 Objeto payer obligatorio para evitar el disparo de scoring/challenge
         payer: {
-          email: session.user.email || undefined,
-          name: "TESTUSER3673818649047264137" // || session.user.name || undefined,
+          email: "test_user_3673818649047264137@testuser.com", // session.user.email || undefined,
+          name: "TESTUSER3673818649047264137" // session.user.name || undefined,
         },
         external_reference: order.id,
         metadata: {
