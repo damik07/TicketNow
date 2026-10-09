@@ -222,6 +222,11 @@ export async function POST(request: NextRequest) {
           unit_price: Number(item.unitPrice),
           currency_id: 'ARS',
         })),
+        // 🔑 Objeto payer obligatorio para evitar el disparo de scoring/challenge
+        payer: {
+          email: session.user.email || undefined,
+          name: session.user.name || undefined,
+        },
         external_reference: order.id,
         metadata: {
           order_id: order.id,
@@ -281,6 +286,7 @@ export async function POST(request: NextRequest) {
         totalAmount,
         marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
         tokenPrefix: organizerAccessToken.slice(0, 5),
+        preferenceBody: JSON.stringify(preferenceBody),
       });
 
       // Retornamos SIEMPRE initPoint (según indicación oficial de MP)
