@@ -225,7 +225,7 @@ export async function POST(request: NextRequest) {
         // 🔑 Objeto payer obligatorio para evitar el disparo de scoring/challenge
         payer: {
           email: session.user.email || undefined,
-          name: session.user.name || undefined,
+          name: "TESTUSER3673818649047264137" // || session.user.name || undefined,
         },
         external_reference: order.id,
         metadata: {
