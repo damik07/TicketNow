@@ -228,10 +228,10 @@ export async function POST(request: NextRequest) {
         //name: "TESTUSER3673818649047264137" // session.user.name || undefined,
         //},
         external_reference: order.id,
-        metadata: {
-          order_id: order.id,
-          event_id: eventId,
-        },
+        //metadata: {
+          //order_id: order.id,
+          //event_id: eventId,
+        //},
         back_urls: {
           success: `${appUrl}/MisEntradas?result=success`,
           failure: `${appUrl}/Checkout?event_id=${eventId}&result=failure`,
@@ -239,11 +239,11 @@ export async function POST(request: NextRequest) {
         },
         auto_return: 'approved',
 
-        ...(shouldApplyMarketplaceFee && { marketplace_fee: Number(totalServiceCharge) }),
+        //...(shouldApplyMarketplaceFee && { marketplace_fee: Number(totalServiceCharge) }),
 
-        ...(webhookBaseUrl.startsWith('https://') && {
-          notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
-        }),
+        //...(webhookBaseUrl.startsWith('https://') && {
+        //  notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
+        //}),
       }
 
       let mpPreference
