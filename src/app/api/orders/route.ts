@@ -222,20 +222,20 @@ export async function POST(request: NextRequest) {
           unit_price: Number(item.unitPrice),
           currency_id: 'ARS',
         })),
-        // 🔑 Objeto payer obligatorio para evitar el disparo de scoring/challenge
-        payer: {
-          email: "test_user_3673818649047264137@testuser.com", // session.user.email || undefined,
-          name: "TESTUSER3673818649047264137" // session.user.name || undefined,
-        },
+
+        //payer: {
+        //email: "test_user_3673818649047264137@testuser.com", // session.user.email || undefined,
+        //name: "TESTUSER3673818649047264137" // session.user.name || undefined,
+        //},
         external_reference: order.id,
         metadata: {
           order_id: order.id,
           event_id: eventId,
         },
         back_urls: {
-          success: `${appUrl}/MisEntradas?status=success`,
-          failure: `${appUrl}/Checkout?event_id=${eventId}&status=failure`,
-          pending: `${appUrl}/MisEntradas?status=pending`,
+          success: `${appUrl}/MisEntradas?result=success`,
+          failure: `${appUrl}/Checkout?event_id=${eventId}&result=failure`,
+          pending: `${appUrl}/MisEntradas?result=pending`,
         },
         auto_return: 'approved',
 

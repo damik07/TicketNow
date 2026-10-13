@@ -266,7 +266,7 @@ function CheckoutContent() {
         toast.success("¡Compra simulada con éxito y entradas enviadas por mail!");
       } else {
         // MP recomienda init_point (prod) con usuarios test del vendedor; sandbox_init_point solo si lo activás explícitamente.
-        const redirectUrl = payload.initPoint || payload.sandboxInitPoint;
+        const redirectUrl = payload.initPoint;
 
         if (redirectUrl) {
           window.location.href = redirectUrl;
