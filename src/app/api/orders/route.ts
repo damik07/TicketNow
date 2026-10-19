@@ -229,8 +229,8 @@ export async function POST(request: NextRequest) {
         //},
         external_reference: order.id,
         //metadata: {
-          //order_id: order.id,
-          //event_id: eventId,
+        //order_id: order.id,
+        //event_id: eventId,
         //},
         back_urls: {
           success: `${appUrl}/MisEntradas?result=success`,
@@ -288,6 +288,14 @@ export async function POST(request: NextRequest) {
         tokenPrefix: organizerAccessToken.slice(0, 5),
         preferenceBody: JSON.stringify(preferenceBody),
       });
+
+      console.log('[DEBUG MP Token]:', {
+        organizerId: event.organizer.id,
+        organizerTokenPrefix: organizerAccessToken ? organizerAccessToken.slice(0, 10) : 'NULO',
+        envTokenPrefix: process.env.MERCADO_PAGO_ACCESS_TOKEN ? process.env.MERCADO_PAGO_ACCESS_TOKEN.slice(0, 10) : 'NULO',
+        isUsingOrganizerToken: organizerAccessToken !== process.env.MERCADO_PAGO_ACCESS_TOKEN,
+      });
+
 
       // Retornamos SIEMPRE initPoint (según indicación oficial de MP)
       return NextResponse.json({
