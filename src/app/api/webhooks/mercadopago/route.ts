@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Payment } from 'mercadopago'
 import { processSuccessOrder } from '@/lib/orders/processOrder'
 import { prisma } from '@/lib/db'
-import { mpClient } from '@/lib/mercadopago'
+import { mpClient, getValidOrganizerAccessToken } from '@/lib/mercadopago'
+import { MercadoPagoConfig } from 'mercadopago'
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,7 @@ export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
 
-    // 1. Parsear id y type tanto de Query Params como del JSON Body (Compatibilidad MP V2)
+    // 1. Parsear id y type
     let type = searchParams.get('type') || searchParams.get('topic')
     let dataId = searchParams.get('data.id') || searchParams.get('id')
 
@@ -22,29 +23,41 @@ export async function POST(request: NextRequest) {
         type = type || body.type || (body.action?.includes('payment') ? 'payment' : null)
         dataId = body.data?.id || body.id
       } catch {
-        // Ignoramos error de parseo si venía sin body
+        // Ignorar error si viene sin body
       }
     }
 
-    // Si no es un evento de pago o no tenemos ID, respondemos 200 OK para descartar
     if ((type !== 'payment' && type !== 'payment.created' && type !== 'payment.updated') || !dataId) {
       return NextResponse.json({ received: true }, { status: 200 })
     }
 
-    const paymentClient = new Payment(mpClient)
+    // 2. Intentar obtener el pago con el cliente global de la plataforma
+    let paymentClient = new Payment(mpClient)
     let paymentData;
 
     try {
       paymentData = await paymentClient.get({ id: dataId });
     } catch (err) {
-      console.error(`[MP Webhook] No se pudo obtener el pago ${dataId}:`, err);
-      return NextResponse.json({ received: true, warning: 'Payment fetch failed' }, { status: 200 });
+      console.warn(`[MP Webhook] No se pudo obtener el pago ${dataId} con el token global. Intentando via Fetch API directo...`);
+      
+      // Fallback: Consulta directa enviando Bearer Token
+      const res = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
+        headers: {
+          'Authorization': `Bearer ${process.env.MERCADO_PAGO_ACCESS_TOKEN}`
+        }
+      });
+      if (res.ok) {
+        paymentData = await res.json();
+      } else {
+        console.error(`[MP Webhook Error]: Imposible recuperar pago ${dataId}`, await res.text());
+        return NextResponse.json({ received: true, warning: 'Payment fetch failed' }, { status: 200 });
+      }
     }
 
     const metadata = paymentData.metadata;
 
     // =========================================================================
-    // 🍹 1. DETECCIÓN: Pagos de Consumiciones / Diferencia de Saldo en Barra
+    // 🍹 1. DETECCIÓN: Pagos de Consumiciones
     // =========================================================================
     if (metadata && metadata.es_diferencia_consumo) {
       if (paymentData.status === 'approved') {
@@ -98,7 +111,6 @@ export async function POST(request: NextRequest) {
 
     if (!orderId) {
       console.error(`[MP Webhook] Pago ${dataId} sin external_reference ni order_id`)
-      // Devolvemos 200 para evitar retries infinitos de un evento huérfano
       return NextResponse.json({ received: true, warning: 'Missing external reference' }, { status: 200 })
     }
 
@@ -107,9 +119,7 @@ export async function POST(request: NextRequest) {
         where: { id: orderId }
       });
 
-      // Verificamos por paymentStatus !== 'aprobado' para mantener idempotencia
       if (existingOrder && existingOrder.paymentStatus !== 'aprobado') {
-        // Intentamos actualizar SOLO SI el estado sigue sin estar aprobado
         const updated = await prisma.order.updateMany({
           where: {
             id: orderId,
@@ -118,12 +128,16 @@ export async function POST(request: NextRequest) {
           data: { paymentStatus: 'aprobado' }
         });
 
-        // count === 1 garantiza que ESTE thread fue el primero en marcarlo como aprobado
         if (updated.count > 0) {
-          await processSuccessOrder(orderId);
-          console.log(`[MP Webhook] Orden ${orderId} aprobada correctamente.`);
+          // 🚀 Ejecuta la generación de tickets y envío de emails
+          try {
+            await processSuccessOrder(orderId);
+            console.log(`[MP Webhook] Orden ${orderId} procesada y tickets creados exitosamente.`);
+          } catch (procError) {
+            console.error(`[MP Webhook Error] Falló processSuccessOrder para ${orderId}:`, procError);
+          }
         } else {
-          console.log(`[MP Webhook] Orden ${orderId} ya estaba siendo procesada por otro evento.`);
+          console.log(`[MP Webhook] Orden ${orderId} ya estaba siendo procesada.`);
         }
       }
     } else {
@@ -131,10 +145,6 @@ export async function POST(request: NextRequest) {
         paymentId: dataId,
         orderId,
         status: paymentData.status,
-        statusDetail: paymentData.status_detail,
-        paymentMethodId: paymentData.payment_method_id,
-        paymentTypeId: paymentData.payment_type_id,
-        transactionAmount: paymentData.transaction_amount,
       })
     }
 

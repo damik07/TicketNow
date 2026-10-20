@@ -223,10 +223,10 @@ export async function POST(request: NextRequest) {
           currency_id: 'ARS',
         })),
 
-        //payer: {
-        //email: "test_user_3673818649047264137@testuser.com", // session.user.email || undefined,
-        //name: "TESTUSER3673818649047264137" // session.user.name || undefined,
-        //},
+        payer: {
+        email: session.user.email || undefined,
+        name: session.user.name || undefined,
+        },
         external_reference: order.id,
         metadata: {
           order_id: order.id,

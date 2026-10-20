@@ -4,9 +4,8 @@ import { Resend } from "resend";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function processSuccessOrder(orderId: string) {
-  // Ejecutamos todo dentro de una transacción exclusiva
+  // Ejecutamos la creación de tickets dentro de una transacción
   const result = await prisma.$transaction(async (tx) => {
-    // Buscamos la orden y verificamos si ya fue procesada antes
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: { items: true },
@@ -16,12 +15,17 @@ export async function processSuccessOrder(orderId: string) {
       throw new Error(`Orden no encontrada: ${orderId}`);
     }
 
-    // 🛡️ Si la orden ya está aprobada, cortamos acá para evitar duplicar entradas
-    if (order.paymentStatus === "aprobado" || order.paymentStatus === "paid") {
+    // 🛡️ Verificamos si la orden ya tiene tickets generados
+    const existingTicketsCount = await tx.ticket.count({
+      where: { orderId: order.id },
+    });
+
+    if (existingTicketsCount > 0) {
+      console.log(`[processSuccessOrder] La orden ${orderId} ya posee ${existingTicketsCount} tickets generados.`);
       return { alreadyProcessed: true, order, createdTickets: [] };
     }
 
-    // Traemos el evento para mapear los datos del Ticket físico
+    // Traemos el evento para mapear los datos del Ticket
     const event = await tx.event.findUnique({
       where: { id: order.eventId },
     });
@@ -30,11 +34,13 @@ export async function processSuccessOrder(orderId: string) {
       throw new Error(`Evento no encontrado para la orden: ${order.eventId}`);
     }
 
-    // Actualizamos el estado de la Orden a 'aprobado'
-    await tx.order.update({
-      where: { id: orderId },
-      data: { paymentStatus: "aprobado" },
-    });
+    // Aseguramos que la orden quede marcada como 'aprobado'
+    if (order.paymentStatus !== "aprobado") {
+      await tx.order.update({
+        where: { id: orderId },
+        data: { paymentStatus: "aprobado" },
+      });
+    }
 
     const createdTickets = [];
 
@@ -47,7 +53,7 @@ export async function processSuccessOrder(orderId: string) {
         },
       });
 
-      // Creamos la cantidad correspondiente de tickets comprados
+      // Creamos los tickets correspondientes
       for (let i = 0; i < item.quantity; i++) {
         const isConsumicion =
           item.ticketTypeName.toLowerCase().includes("consumición") ||
@@ -63,7 +69,6 @@ export async function processSuccessOrder(orderId: string) {
             eventDate: event.dateTime.toISOString(),
             eventLocation: event.locationName,
             ticketTypeName: item.ticketTypeName,
-            // Generamos el texto plano único del QR
             qrCode: `TK-${Date.now()}-${Math.random().toString(36).substring(2, 11).toUpperCase()}-${i + 1}`,
             usageStatus: "no_usado",
             holderName: order.userName,
@@ -96,7 +101,7 @@ export async function processSuccessOrder(orderId: string) {
     return { alreadyProcessed: false, order, createdTickets };
   });
 
-  // ✉️ ENVÍO DE MAIL REAL (Se ejecuta fuera de la transacción de BD para no ralentizarla)
+  // ✉️ ENVÍO DE MAIL REAL
   if (result && !result.alreadyProcessed && result.createdTickets.length > 0) {
     try {
       const ticketsHtml = result.createdTickets
@@ -116,8 +121,11 @@ export async function processSuccessOrder(orderId: string) {
         })
         .join("");
 
+      // Usamos el remitente oficial de prueba de Resend si el dominio aún no está verificado
+      const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+
       await resend.emails.send({
-        from: "TicketNow <entradas@ticketnow.com>", // Recordá usar "onboarding@resend.dev" si estás testeando sin dominio propio
+        from: `TicketNow <${fromEmail}>`,
         to: result.order.userEmail,
         subject: `¡Tus entradas para ${result.order.eventTitle}! 🎟️`,
         html: `
@@ -135,7 +143,6 @@ export async function processSuccessOrder(orderId: string) {
       console.log(`[Email] Correo enviado con éxito a ${result.order.userEmail}`);
     } catch (mailError) {
       console.error("[Email Error] No se pudo despachar el correo:", mailError);
-      // No arrojamos el error para no romper la respuesta HTTP del webhook si la BD ya impactó
     }
   }
 
