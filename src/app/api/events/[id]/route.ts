@@ -127,6 +127,8 @@ export async function PUT(
       return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
     }
 
+    const body = await request.json()
+
     const { 
       title, 
       description, 
@@ -134,13 +136,17 @@ export async function PUT(
       endDateTime, 
       locationName, 
       locationAddress, 
+      locationLat,
+      locationLng,
+      latitude,
+      longitude,
       category, 
       bannerUrl, 
       status, 
       ticketTypes, 
       maxConcurrent, 
       queueActive 
-    } = await request.json()
+    } = body
 
     const existingEvent = await prisma.event.findUnique({
       where: {
@@ -152,6 +158,13 @@ export async function PUT(
     if (!existingEvent) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
+
+    // 🚀 Normalización de coordenadas con soporte de nombres duales (locationLat / latitude)
+    const rawLat = locationLat ?? latitude ?? existingEvent.locationLat;
+    const rawLng = locationLng ?? longitude ?? existingEvent.locationLng;
+
+    const parsedLat = (rawLat !== undefined && rawLat !== null && rawLat !== '') ? parseFloat(String(rawLat)) : null;
+    const parsedLng = (rawLng !== undefined && rawLng !== null && rawLng !== '') ? parseFloat(String(rawLng)) : null;
 
     let minPrice = existingEvent.minPrice;
     let totalCapacity = existingEvent.totalCapacity;
@@ -167,7 +180,7 @@ export async function PUT(
     }
 
     const updatedEvent = await prisma.$transaction(async (tx) => {
-      // 1. Actualizamos los campos base del evento
+      // 1. Actualizamos los campos base del evento (incluyendo coordenadas)
       const evt = await tx.event.update({
         where: { id: id },
         data: {
@@ -177,6 +190,8 @@ export async function PUT(
           endDateTime: endDateTime ? parseLocalDate(endDateTime) : existingEvent.endDateTime,
           locationName,
           locationAddress,
+          locationLat: parsedLat,
+          locationLng: parsedLng,
           category,
           bannerUrl,
           minPrice,

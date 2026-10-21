@@ -108,17 +108,17 @@ function FormularioEvento() {
       );
       if (!response.ok) return;
       const data = await response.json();
-      
+
       if (data.display_name) {
         const street = data.address.road || "";
         const houseNumber = data.address.house_number || "";
         const city = data.address.city || data.address.town || data.address.village || "";
-        
+
         const shortAddress = [street, houseNumber, city].filter(Boolean).join(", ");
-        
-        setEvent(prev => ({ 
-          ...prev, 
-          location_address: shortAddress || data.display_name 
+
+        setEvent(prev => ({
+          ...prev,
+          location_address: shortAddress || data.display_name
         }));
       }
     } catch (err) {
@@ -126,9 +126,18 @@ function FormularioEvento() {
     }
   };
 
+  // Preserva la precisión flotante de 8 decimales de OpenStreetMap / Leaflet
   const handleMapChange = (lat: number, lng: number) => {
-    setEvent(prev => ({ ...prev, latitude: lat, longitude: lng }));
-    fetchAddressFromCoords(lat, lng);
+    const safeLat = Number(lat);
+    const safeLng = Number(lng);
+
+    setEvent(prev => ({
+      ...prev,
+      latitude: safeLat,
+      longitude: safeLng
+    }));
+
+    fetchAddressFromCoords(safeLat, safeLng);
   };
 
   const handleSearchAddress = async () => {
@@ -139,18 +148,19 @@ function FormularioEvento() {
 
     setSearchingAddress(true);
     try {
-      const queryAddress = `${event.location_address}, Entre Rios, Argentina`;
+      const queryAddress = `${event.location_address}, Entre Ríos, Argentina`;
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryAddress)}&limit=1`,
         { headers: { "User-Agent": "TicketNow-App" } }
       );
-      
+
       const data = await response.json();
 
       if (data && data.length > 0) {
+        // parseFloat directo sin redondeos ni string format
         const newLat = parseFloat(data[0].lat);
         const newLng = parseFloat(data[0].lon);
-        
+
         setEvent(prev => ({
           ...prev,
           latitude: newLat,
@@ -190,16 +200,19 @@ function FormularioEvento() {
 
         const eventData = await eventResponse.json();
 
+        const rawLat = eventData.latitude ?? eventData.locationLat ?? eventData.location_lat;
+        const rawLng = eventData.longitude ?? eventData.locationLng ?? eventData.location_lng;
+
         setEvent({
           title: eventData.title || "",
           description: eventData.description || "",
           date_time: eventData.dateTime ? eventData.dateTime.substring(0, 16) : "",
           end_date_time: eventData.endDateTime ? eventData.endDateTime.substring(0, 16) : "",
           type: eventData.type || "PRESENCIAL",
-          location_name: eventData.locationName || "",
-          location_address: eventData.locationAddress || "",
-          latitude: eventData.latitude !== null && eventData.latitude !== undefined ? eventData.latitude : -31.7413,
-          longitude: eventData.longitude !== null && eventData.longitude !== undefined ? eventData.longitude : -60.5115,
+          location_name: eventData.locationName || eventData.location_name || "",
+          location_address: eventData.locationAddress || eventData.location_address || "",
+          latitude: rawLat !== null && rawLat !== undefined ? Number(rawLat) : -31.7413,
+          longitude: rawLng !== null && rawLng !== undefined ? Number(rawLng) : -60.5115,
           streaming_url: eventData.streamingUrl || "",
           streaming_key: eventData.streamingKey || "",
           category: eventData.category || "musica",
@@ -252,7 +265,7 @@ function FormularioEvento() {
 
   const addTicketType = () => {
     setTicketTypes((prev) => [
-      ...prev, 
+      ...prev,
       { name: "", description: "", price: 0, stock_total: 50, max_per_user: 4, tickets_per_bundle: 1, is_pack: false, parent_ticket_type_id: null }
     ]);
   };
@@ -265,7 +278,7 @@ function FormularioEvento() {
     setTicketTypes((prev) => {
       const copy = [...prev];
       copy[index] = { ...copy[index], [field]: value };
-      
+
       // Si desmarca la opción de pack, reseteamos a valores individuales
       if (field === "is_pack" && !value) {
         copy[index].tickets_per_bundle = 1;
@@ -282,6 +295,10 @@ function FormularioEvento() {
     try {
       const eventData = {
         ...event,
+        latitude: event.latitude !== null ? Number(event.latitude) : null,
+        longitude: event.longitude !== null ? Number(event.longitude) : null,
+        locationLat: event.latitude !== null ? Number(event.latitude) : null,
+        locationLng: event.longitude !== null ? Number(event.longitude) : null,
         maxConcurrent: Math.max(1, Number(event.max_concurrent) || 50),
         ticketTypes: ticketTypes.map(tt => ({
           id: tt.id,
@@ -385,7 +402,7 @@ function FormularioEvento() {
             className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6">
             <h3 className="text-lg font-semibold text-white mb-5">Información General</h3>
             <div className="space-y-4">
-              
+
               {/* SELECTOR TIPO DE EVENTO */}
               <div>
                 <Label className="text-slate-400 text-xs mb-1.5 block">Tipo de Evento</Label>
@@ -457,7 +474,7 @@ function FormularioEvento() {
                         className="bg-slate-800/50 border-slate-700 text-white"
                       />
                     </div>
-                    
+
                     {/* INPUT DE DIRECCIÓN CON BOTÓN DE BÚSQUEDA ASOCIADO */}
                     <div>
                       <Label className="text-slate-400 text-xs mb-1.5 block">Dirección</Label>
@@ -468,9 +485,9 @@ function FormularioEvento() {
                           placeholder="Calle 1234, Paraná"
                           className="bg-slate-800/50 border-slate-700 text-white"
                         />
-                        <Button 
+                        <Button
                           type="button"
-                          variant="outline" 
+                          variant="outline"
                           onClick={handleSearchAddress}
                           disabled={searchingAddress}
                           className="border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-800 hover:text-white px-3"
@@ -617,136 +634,136 @@ function FormularioEvento() {
           </motion.div>
 
           {/* Tipos de Entrada con Vinculación de Stock */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6 mb-6">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Ticket className="w-5 h-5 text-violet-400" /> Tipos de Entrada y Combos
-            </h3>
-            <Button variant="outline" size="sm" onClick={addTicketType} className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1">
-              <Plus className="w-3 h-3" /> Agregar
-            </Button>
-          </div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6 mb-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Ticket className="w-5 h-5 text-violet-400" /> Tipos de Entrada y Combos
+              </h3>
+              <Button variant="outline" size="sm" onClick={addTicketType} className="border-slate-700 text-slate-300 hover:bg-slate-800 gap-1">
+                <Plus className="w-3 h-3" /> Agregar
+              </Button>
+            </div>
 
-          <div className="space-y-4">
-            {ticketTypes.map((tt, i) => {
-              // Filtrar tickets elegibles para ser "Padre" (los que no son packs)
-              const availableParents = ticketTypes.filter((_, index) => index !== i && !ticketTypes[index].is_pack);
+            <div className="space-y-4">
+              {ticketTypes.map((tt, i) => {
+                // Filtrar tickets elegibles para ser "Padre" (los que no son packs)
+                const availableParents = ticketTypes.filter((_, index) => index !== i && !ticketTypes[index].is_pack);
 
-              return (
-                <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-medium flex items-center gap-2">
-                      Tipo {i + 1}
-                      {tt.is_pack && (
-                        <span className="bg-violet-500/20 text-violet-300 text-[10px] px-2 py-0.5 rounded-full border border-violet-500/30 font-semibold">
-                          Combo / Pack
-                        </span>
-                      )}
-                    </span>
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor={`pack-switch-${i}`} className="text-xs text-slate-400 cursor-pointer">¿Es un Pack?</Label>
-                        <Switch
-                          id={`pack-switch-${i}`}
-                          checked={tt.is_pack || false}
-                          onCheckedChange={(v) => updateTicketType(i, "is_pack", v)}
-                        />
+                return (
+                  <div key={i} className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500 font-medium flex items-center gap-2">
+                        Tipo {i + 1}
+                        {tt.is_pack && (
+                          <span className="bg-violet-500/20 text-violet-300 text-[10px] px-2 py-0.5 rounded-full border border-violet-500/30 font-semibold">
+                            Combo / Pack
+                          </span>
+                        )}
+                      </span>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor={`pack-switch-${i}`} className="text-xs text-slate-400 cursor-pointer">¿Es un Pack?</Label>
+                          <Switch
+                            id={`pack-switch-${i}`}
+                            checked={tt.is_pack || false}
+                            onCheckedChange={(v) => updateTicketType(i, "is_pack", v)}
+                          />
+                        </div>
+                        {ticketTypes.length > 1 && (
+                          <button onClick={() => removeTicketType(i)} className="text-red-400 hover:text-red-300">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
-                      {ticketTypes.length > 1 && (
-                        <button onClick={() => removeTicketType(i)} className="text-red-400 hover:text-red-300">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <Label className="text-slate-500 text-xs mb-1 block">Nombre</Label>
-                      <Input value={tt.name} onChange={(e) => updateTicketType(i, "name", e.target.value)} placeholder="Ej: General, Pack 4x3..." className="bg-slate-900/50 border-slate-700 text-white text-sm" />
-                    </div>
-                    <div>
-                      <Label className="text-slate-500 text-xs mb-1 block">Precio Total ($)</Label>
-                      <Input type="number" value={tt.price} onChange={(e) => updateTicketType(i, "price", parseFloat(e.target.value) || 0)} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
-                    </div>
-                    
-                    {tt.is_pack ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div>
-                        <Label className="text-slate-500 text-xs mb-1 block flex items-center gap-1">
-                          <Users className="w-3 h-3 text-violet-400" /> Personas por Pack
-                        </Label>
-                        <Input 
-                          type="number" 
-                          min={2} 
-                          value={tt.tickets_per_bundle || 2} 
-                          onChange={(e) => updateTicketType(i, "tickets_per_bundle", Math.max(2, parseInt(e.target.value, 10) || 2))} 
-                          className="bg-slate-900/50 border-violet-500/30 text-white text-sm focus-visible:ring-violet-500" 
-                        />
+                        <Label className="text-slate-500 text-xs mb-1 block">Nombre</Label>
+                        <Input value={tt.name} onChange={(e) => updateTicketType(i, "name", e.target.value)} placeholder="Ej: General, Pack 4x3..." className="bg-slate-900/50 border-slate-700 text-white text-sm" />
                       </div>
-                    ) : (
                       <div>
-                        <Label className="text-slate-500 text-xs mb-1 block">Stock Total</Label>
-                        <Input type="number" value={tt.stock_total} onChange={(e) => updateTicketType(i, "stock_total", parseInt(e.target.value) || 0)} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
-                      </div>
-                    )}
-
-                    <div>
-                      <Label className="text-slate-500 text-xs mb-1 block">Máx. por usuario</Label>
-                      <Input type="number" value={tt.max_per_user || 4} onChange={(e) => updateTicketType(i, "max_per_user", parseInt(e.target.value) || 1)} min={1} max={20} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
-                    </div>
-                  </div>
-
-                  {/* 💡 LÓGICA DE VINCULACIÓN DE STOCK SI ES UN PACK */}
-                  {tt.is_pack && (
-                    <div className="pt-2 border-t border-slate-800/80 space-y-3">
-                      <div>
-                        <Label className="text-xs text-slate-400 mb-1.5 flex items-center gap-1">
-                          <Link2 className="w-3.5 h-3.5 text-violet-400" /> Consumo de Aforo / Stock
-                        </Label>
-                        <Select 
-                          value={tt.parent_ticket_type_id || "independent"} 
-                          onValueChange={(val) => updateTicketType(i, "parent_ticket_type_id", val === "independent" ? null : val)}
-                        >
-                          <SelectTrigger className="bg-slate-900/60 border-slate-700 text-slate-200 text-xs">
-                            <SelectValue placeholder="Seleccionar cómo descuenta stock" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-slate-900 border-slate-800">
-                            <SelectItem value="independent">
-                              📦 Stock Propio e Independiente (Lote exclusivo de packs)
-                            </SelectItem>
-                            {availableParents.map((p, pIndex) => (
-                              <SelectItem key={pIndex} value={p.id || p.name || `temp-${pIndex}`}>
-                                🔗 Descontar del stock de: {p.name || `Entrada ${pIndex + 1}`} ({p.stock_total} disp.)
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Label className="text-slate-500 text-xs mb-1 block">Precio Total ($)</Label>
+                        <Input type="number" value={tt.price} onChange={(e) => updateTicketType(i, "price", parseFloat(e.target.value) || 0)} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
                       </div>
 
-                      {tt.parent_ticket_type_id ? (
-                        <p className="text-[11px] text-violet-300/80 font-mono bg-violet-950/30 p-2 rounded border border-violet-900/30">
-                          ✨ Cada venta de este pack descontará <strong>{tt.tickets_per_bundle} entradas</strong> directamente del stock principal del sector seleccionado.
-                        </p>
+                      {tt.is_pack ? (
+                        <div>
+                          <Label className="text-slate-500 text-xs mb-1 block flex items-center gap-1">
+                            <Users className="w-3 h-3 text-violet-400" /> Personas por Pack
+                          </Label>
+                          <Input
+                            type="number"
+                            min={2}
+                            value={tt.tickets_per_bundle || 2}
+                            onChange={(e) => updateTicketType(i, "tickets_per_bundle", Math.max(2, parseInt(e.target.value, 10) || 2))}
+                            className="bg-slate-900/50 border-violet-500/30 text-white text-sm focus-visible:ring-violet-500"
+                          />
+                        </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <Label className="text-slate-500 text-xs mb-1 block">Límite de Packs a vender</Label>
-                            <Input 
-                              type="number" 
-                              value={tt.stock_total} 
-                              onChange={(e) => updateTicketType(i, "stock_total", parseInt(e.target.value) || 0)} 
-                              className="bg-slate-900/50 border-slate-700 text-white text-sm" 
-                            />
-                          </div>
+                        <div>
+                          <Label className="text-slate-500 text-xs mb-1 block">Stock Total</Label>
+                          <Input type="number" value={tt.stock_total} onChange={(e) => updateTicketType(i, "stock_total", parseInt(e.target.value) || 0)} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
                         </div>
                       )}
+
+                      <div>
+                        <Label className="text-slate-500 text-xs mb-1 block">Máx. por usuario</Label>
+                        <Input type="number" value={tt.max_per_user || 4} onChange={(e) => updateTicketType(i, "max_per_user", parseInt(e.target.value) || 1)} min={1} max={20} className="bg-slate-900/50 border-slate-700 text-white text-sm" />
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </motion.div>
+
+                    {/* 💡 LÓGICA DE VINCULACIÓN DE STOCK SI ES UN PACK */}
+                    {tt.is_pack && (
+                      <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                        <div>
+                          <Label className="text-xs text-slate-400 mb-1.5 flex items-center gap-1">
+                            <Link2 className="w-3.5 h-3.5 text-violet-400" /> Consumo de Aforo / Stock
+                          </Label>
+                          <Select
+                            value={tt.parent_ticket_type_id || "independent"}
+                            onValueChange={(val) => updateTicketType(i, "parent_ticket_type_id", val === "independent" ? null : val)}
+                          >
+                            <SelectTrigger className="bg-slate-900/60 border-slate-700 text-slate-200 text-xs">
+                              <SelectValue placeholder="Seleccionar cómo descuenta stock" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-slate-800">
+                              <SelectItem value="independent">
+                                📦 Stock Propio e Independiente (Lote exclusivo de packs)
+                              </SelectItem>
+                              {availableParents.map((p, pIndex) => (
+                                <SelectItem key={pIndex} value={p.id || p.name || `temp-${pIndex}`}>
+                                  🔗 Descontar del stock de: {p.name || `Entrada ${pIndex + 1}`} ({p.stock_total} disp.)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {tt.parent_ticket_type_id ? (
+                          <p className="text-[11px] text-violet-300/80 font-mono bg-violet-950/30 p-2 rounded border border-violet-900/30">
+                            ✨ Cada venta de este pack descontará <strong>{tt.tickets_per_bundle} entradas</strong> directamente del stock principal del sector seleccionado.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-slate-500 text-xs mb-1 block">Límite de Packs a vender</Label>
+                              <Input
+                                type="number"
+                                value={tt.stock_total}
+                                onChange={(e) => updateTicketType(i, "stock_total", parseInt(e.target.value) || 0)}
+                                className="bg-slate-900/50 border-slate-700 text-white text-sm"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
 
           {/* Guardar */}
           <Button
@@ -765,7 +782,7 @@ function FormularioEvento() {
 // 2. 🛡️ Exportación por defecto envuelta en Suspense para mitigar problemas con useSearchParams()
 export default function CrearEvento() {
   return (
-    <Suspense 
+    <Suspense
       fallback={
         <div className="min-h-screen bg-slate-950 flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-violet-500" />

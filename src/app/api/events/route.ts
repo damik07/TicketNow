@@ -1,10 +1,10 @@
-// ...app\api\events\route.tx
+// app/api/events/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { normalizeUserRole, isAdminRole } from '@/lib/user-role' // 🚀 Cambiado
+import { normalizeUserRole, isAdminRole } from '@/lib/user-role'
 import { parseLocalDate } from "@/utils/date";
 
 export const dynamic = 'force-dynamic';
@@ -12,13 +12,12 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url!)
-    const eventId = searchParams.get('eventId') // 💡 1. Capturamos el eventId que manda el Checkout
+    const eventId = searchParams.get('eventId')
     const category = searchParams.get('category')
     const status = searchParams.get('status')
     const admin = searchParams.get('admin')
     const organizerId = searchParams.get('organizerId')
 
-    // Check if user is admin for admin access
     let isAdmin = false
     if (admin === 'true') {
       const session = await getServerSession(authOptions)
@@ -27,7 +26,6 @@ export async function GET(request: NextRequest) {
           where: { email: session.user.email }
         })
         
-        // 🚀 Cambiado: Validación simplificada usando el helper unificado
         if (user) {
           const role = normalizeUserRole(user.role)
           isAdmin = isAdminRole(role)
@@ -35,7 +33,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 💡 2. Si viene un eventId, buscamos ESE evento único con su paquete de comisiones
+    // 💡 1. Si viene eventId, traemos TODOS sus ticketTypes (incluso los agotados para mostrar "Agotado")
     if (eventId) {
       const event = await prisma.event.findUnique({
         where: { id: eventId },
@@ -47,23 +45,28 @@ export async function GET(request: NextRequest) {
             }
           },
           ticketTypes: {
-            where: { stockAvailable: { gt: 0 } },
+            orderBy: { sortOrder: 'asc' },
             select: {
               id: true,
               name: true,
+              description: true,
               price: true,
+              stockTotal: true,
               stockAvailable: true,
+              maxPerUser: true,
+              isPack: true,
+              ticketsPerBundle: true,
+              parentTicketTypeId: true,
             }
           },
-          pack: true // 💡 CLAVE: Traemos el paquete de comisiones asignado al evento
+          pack: true
         }
       })
 
-      // El frontend espera un array (por tu lógica `eventData[0]`), así que lo envolvemos si existe
       return NextResponse.json(event ? [event] : [])
     }
 
-    // 💡 3. Si NO viene eventId, el flujo sigue exactamente igual que antes para los listados
+    // 💡 2. Consulta general de listados
     const events = await prisma.event.findMany({
       where: {
         ...(status && { status }),
@@ -79,15 +82,16 @@ export async function GET(request: NextRequest) {
           }
         },
         ticketTypes: {
-          where: { stockAvailable: { gt: 0 } },
+          orderBy: { sortOrder: 'asc' },
           select: {
             id: true,
             name: true,
             price: true,
             stockAvailable: true,
+            maxPerUser: true,
           }
         },
-        pack: true // De paso lo incluimos acá por si lo necesitas en los listados
+        pack: true
       },
       orderBy: { createdAt: 'desc' }
     })
@@ -106,14 +110,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { title, description, dateTime, endDateTime, locationName, locationAddress, locationLat, locationLng, category, bannerUrl, ticketTypes, maxConcurrent, queueActive } = await request.json()
+    const body = await request.json()
+    const { 
+      title, 
+      description, 
+      dateTime, 
+      endDateTime, 
+      locationName, 
+      locationAddress, 
+      locationLat, 
+      locationLng, 
+      latitude, 
+      longitude, 
+      category, 
+      bannerUrl, 
+      ticketTypes, 
+      maxConcurrent, 
+      queueActive 
+    } = body
 
-    // Validación preventiva: Si no mandan tickets, evitamos que rompa el flujo
     if (!ticketTypes || !Array.isArray(ticketTypes) || ticketTypes.length === 0) {
       return NextResponse.json({ error: 'Debes incluir al menos un tipo de entrada.' }, { status: 400 })
     }
 
-    // Check if user is an organizer
     const user = await prisma.user.findUnique({
       where: { email: session.user.email }
     })
@@ -126,66 +145,114 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User is not an organizer' }, { status: 403 })
     }
 
-    // SANITIZACIÓN: Aseguramos que price y stockTotal sean números válidos siempre
+    // 🚀 Normalización de coordenadas con soporte flotante estricto
+    const rawLat = locationLat ?? latitude;
+    const rawLng = locationLng ?? longitude;
+    const parsedLat = (rawLat !== undefined && rawLat !== null && rawLat !== '') ? parseFloat(String(rawLat)) : null;
+    const parsedLng = (rawLng !== undefined && rawLng !== null && rawLng !== '') ? parseFloat(String(rawLng)) : null;
+
+    // SANITIZACIÓN: Mapeo y limpieza de valores numéricos
     const cleanTicketTypes = ticketTypes.map((t: any) => ({
+      id: t.id,
       name: t.name || 'General',
       description: t.description || '',
       price: Number(t.price) || 0,
-      stockTotal: Number(t.stockTotal) || 0,
-      maxPerUser: Number(t.maxPerUser) || 4,
-      ticketsPerBundle: Number(t.ticketsPerBundle) || 1, // 👈 [NUEVO]
-      isPack: Boolean(t.isPack),                        // 👈 [NUEVO]
-      parentTicketTypeId: t.parentTicketTypeId || null, // 👈 [NUEVO]
+      stockTotal: Number(t.stock_total ?? t.stockTotal) || 0,
+      maxPerUser: Number(t.max_per_user ?? t.maxPerUser) || 4,
+      ticketsPerBundle: Number(t.tickets_per_bundle ?? t.ticketsPerBundle) || 1,
+      isPack: Boolean(t.is_pack ?? t.isPack),
+      parentTicketTypeId: t.parent_ticket_type_id ?? t.parentTicketTypeId ?? null,
     }))
 
-    // Ahora calculamos de forma 100% segura sobre el array limpio
     const minPrice = Math.min(...cleanTicketTypes.map(t => t.price))
-    const totalCapacity = cleanTicketTypes.reduce((sum, t) => sum + t.stockTotal, 0)
+    
+    // Contamos aforo real (solo entradas base, sin contar los packs para no duplicar)
+    const totalCapacity = cleanTicketTypes
+      .filter(t => !t.isPack)
+      .reduce((sum, t) => sum + t.stockTotal, 0)
 
-    const event = await prisma.event.create({
-      data: {
-        organizerId: organizer.id,
-        title,
-        description,
-        dateTime: parseLocalDate(dateTime)!,
-        endDateTime: endDateTime ? parseLocalDate(endDateTime) : null,
-        locationName,
-        locationAddress,
-        locationLat,
-        locationLng,
-        category,
-        bannerUrl,
-        status: 'borrador',
-        minPrice: minPrice,
-        totalCapacity: totalCapacity,
-        maxConcurrent: Math.max(1, Number(maxConcurrent) || 50),
-        queueActive: Boolean(queueActive),
-        ticketTypes: {
-          create: cleanTicketTypes.map((t, index) => ({
-            name: t.name,
-            description: t.description,
-            price: t.price,
-            stockTotal: t.stockTotal,
-            stockAvailable: t.stockTotal, // Inicializa con el total
-            maxPerUser: t.maxPerUser,
-            ticketsPerBundle: t.ticketsPerBundle, // 👈 [NUEVO]
-            isPack: t.isPack,                     // 👈 [NUEVO]
-            parentTicketTypeId: t.parentTicketTypeId, // 👈 [NUEVO]
-            sortOrder: index,
-          }))
+    // Creación en 2 fases con transacción para soportar vincular Packs con Tickets Padre
+    const createdEvent = await prisma.$transaction(async (tx) => {
+      const newEvt = await tx.event.create({
+        data: {
+          organizerId: organizer.id,
+          title,
+          description,
+          dateTime: parseLocalDate(dateTime)!,
+          endDateTime: endDateTime ? parseLocalDate(endDateTime) : null,
+          locationName,
+          locationAddress,
+          locationLat: parsedLat,
+          locationLng: parsedLng,
+          category,
+          bannerUrl,
+          status: 'borrador',
+          minPrice,
+          totalCapacity,
+          maxConcurrent: Math.max(1, Number(maxConcurrent) || 50),
+          queueActive: Boolean(queueActive),
         }
-      },
-      include: {
-        ticketTypes: true,
-        organizer: true
-      }
-    })
+      });
 
-    return NextResponse.json(event)
+      // FASE A: Crear Entradas Base (no packs)
+      const baseTicketsMap = new Map<string, string>();
+
+      for (let i = 0; i < cleanTicketTypes.length; i++) {
+        const t = cleanTicketTypes[i];
+        if (!t.isPack) {
+          const createdBase = await tx.ticketType.create({
+            data: {
+              eventId: newEvt.id,
+              name: t.name,
+              description: t.description,
+              price: t.price,
+              stockTotal: t.stockTotal,
+              stockAvailable: t.stockTotal,
+              maxPerUser: t.maxPerUser,
+              ticketsPerBundle: 1,
+              isPack: false,
+              sortOrder: i,
+            }
+          });
+          const tempKey = t.id || t.name || `temp-${i}`;
+          baseTicketsMap.set(tempKey, createdBase.id);
+          baseTicketsMap.set(t.name, createdBase.id);
+        }
+      }
+
+      // FASE B: Crear Combos/Packs asociando el parentTicketTypeId resuelto
+      for (let i = 0; i < cleanTicketTypes.length; i++) {
+        const t = cleanTicketTypes[i];
+        if (t.isPack) {
+          const resolvedParentId = t.parentTicketTypeId ? (baseTicketsMap.get(t.parentTicketTypeId) || null) : null;
+
+          await tx.ticketType.create({
+            data: {
+              eventId: newEvt.id,
+              name: t.name,
+              description: t.description,
+              price: t.price,
+              stockTotal: t.stockTotal,
+              stockAvailable: t.stockTotal,
+              maxPerUser: t.maxPerUser,
+              ticketsPerBundle: t.ticketsPerBundle,
+              isPack: true,
+              parentTicketTypeId: resolvedParentId,
+              sortOrder: i,
+            }
+          });
+        }
+      }
+
+      return tx.event.findUnique({
+        where: { id: newEvt.id },
+        include: { ticketTypes: true, organizer: true }
+      });
+    });
+
+    return NextResponse.json(createdEvent)
   } catch (error) {
-    // IMPORTANTE: Mira tu consola de la terminal para ver el error exacto si vuelve a fallar
     console.error('Detailed Event creation error:', error)
     return NextResponse.json({ error: 'Failed to create event' }, { status: 500 })
   }
 }
-

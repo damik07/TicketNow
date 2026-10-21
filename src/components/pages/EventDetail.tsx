@@ -295,7 +295,7 @@ function EventDetailContent() {
   return (
     <div className="bg-slate-950 min-h-screen">
       {/* Banner */}
-      <div className="relative h-[50vh] sm:h-[60vh]">
+      <div className="relative h-[32vh] sm:h-[40vh] max-h-[420px]">
         <img
           src={event.banner_url || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1920&q=80"}
           alt={event.title}
@@ -314,7 +314,7 @@ function EventDetailContent() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 -mt-32 relative z-10">
+      <div className="max-w-6xl mx-auto px-4 -mt-44 sm:-mt-52 relative z-10 pb-16">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* Columna Izquierda: Información Principal */}
