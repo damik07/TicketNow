@@ -8,7 +8,7 @@ interface TicketType {
   description?: string;
   price: number;
   stock_available?: number;
-  max_per_user?: number; // Límite por tipo de ticket (ej: 3)
+  max_per_user?: number; // Límite específico de este tipo de ticket (ej: 3)
 }
 
 interface Quantities {
@@ -19,7 +19,7 @@ interface TicketSelectorProps {
   ticketTypes: TicketType[];
   quantities: Quantities;
   setQuantities: (quantities: Quantities | ((prev: Quantities) => Quantities)) => void;
-  maxAllowedItems: number; // Límite remanente global del Evento (ej: 4)
+  maxAllowedItems: number; // Límite remanente global del Evento por usuario (ej: 4)
 }
 
 export default function TicketSelector({ 
@@ -29,28 +29,37 @@ export default function TicketSelector({
   maxAllowedItems 
 }: TicketSelectorProps) {
 
-  // Calculamos el total que el usuario metió en el carrito actual entre todas las entradas
+  // Calculamos la suma actual de entradas en el carrito
   const currentTotalInCart = Object.values(quantities).reduce((a, b) => a + b, 0);
 
-  const update = (id: string, delta: number, maxPerTicketType: number) => {
+  const update = (id: string, delta: number, maxPerTicketType: number, stockAvailable: number) => {
     setQuantities((prev: Quantities) => {
-      const current = prev[id] || 0;
+      const currentQty = prev[id] || 0;
       
+      // Restar entradas siempre está permitido si la cantidad es mayor a 0
       if (delta < 0) {
-        return { ...prev, [id]: Math.max(0, current - 1) };
+        return { ...prev, [id]: Math.max(0, currentQty - 1) };
       }
 
-      // 🛡️ CONTROL GLOBAL: Si ya alcanzó el límite remanente del evento, no suma nada
-      if (currentTotalInCart >= maxAllowedItems) {
+      // Calculamos el total exacto en el carrito dentro de la transacción de estado
+      const totalInCart = Object.values(prev).reduce((a, b) => a + b, 0);
+
+      // 🛡️ CONTROL 1: Límite global del Evento por usuario
+      if (totalInCart >= maxAllowedItems) {
         return prev;
       }
 
-      // 🛡️ CONTROL INDIVIDUAL: Si ya alcanzó el límite de ESTE tipo de ticket específico, no suma
-      if (current >= maxPerTicketType) {
+      // 🛡️ CONTROL 2: Límite individual de este Tipo de Ticket
+      if (currentQty >= maxPerTicketType) {
         return prev;
       }
 
-      return { ...prev, [id]: current + 1 };
+      // 🛡️ CONTROL 3: Stock físico disponible
+      if (currentQty >= stockAvailable) {
+        return prev;
+      }
+
+      return { ...prev, [id]: currentQty + 1 };
     });
   };
 
@@ -67,18 +76,16 @@ export default function TicketSelector({
     <div className="space-y-3">
       {ticketTypes.map((tt: TicketType) => {
         const qty = quantities[tt.id] || 0;
-        const soldOut = (tt.stock_available || 0) <= 0;
+        const stockAvailable = tt.stock_available ?? 0;
+        const soldOut = stockAvailable <= 0;
         
-        // El límite de este tipo de entrada en particular (vuelto número seguro)
-        const maxPerTicketType = Number(tt.max_per_user || 10);
+        // 💡 Límite por tipo de ticket individual (si no está definido en el objeto, usa el remanente global)
+        const maxPerTicketType = Number(tt.max_per_user ?? maxAllowedItems);
         
-        // 💡 LÓGICA DE BLOQUEO PREDICTIVA DE DOBLE ESCUDO:
-        // El botón "+" se congela si:
-        // 1. Se agota el stock físico.
-        // 2. El usuario ya alcanzó el máximo permitido para este tipo de ticket específico (ej: ya sumó 3 generales).
-        // 3. O si al intentar sumar una entrada más de cualquier tipo, se pasa del remanente global del evento.
+        // 💡 CONDICIÓN DE BLOQUEO DEL BOTÓN "+":
+        // Se desactiva si alcanza cualquiera de los 3 techos: stock, tope del ticket o tope del evento
         const isPlusDisabled = 
-          qty >= (tt.stock_available || 0) || 
+          qty >= stockAvailable || 
           qty >= maxPerTicketType || 
           (currentTotalInCart + 1) > maxAllowedItems;
 
@@ -98,7 +105,9 @@ export default function TicketSelector({
                 ${tt.price?.toLocaleString("es-AR")}
               </p>
               <p className="text-xs text-slate-600">
-                {soldOut ? "Agotado" : `${tt.stock_available || 0} disp. · máx. ${maxPerTicketType} por tipo`}
+                {soldOut 
+                  ? "Agotado" 
+                  : `${stockAvailable} disp. · máx. ${maxPerTicketType} por entrada`}
               </p>
             </div>
             
@@ -108,7 +117,7 @@ export default function TicketSelector({
                   variant="outline"
                   size="icon"
                   className="h-8 w-8 rounded-lg border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700"
-                  onClick={() => update(tt.id, -1, maxPerTicketType)}
+                  onClick={() => update(tt.id, -1, maxPerTicketType, stockAvailable)}
                   disabled={qty === 0}
                 >
                   <Minus className="w-3 h-3" />
@@ -120,9 +129,9 @@ export default function TicketSelector({
                   variant="outline"
                   size="icon"
                   className={`h-8 w-8 rounded-lg border-slate-700 hover:bg-slate-700 ${
-                    isPlusDisabled ? "text-slate-600" : "text-slate-400 hover:text-white"
+                    isPlusDisabled ? "text-slate-600 opacity-50 cursor-not-allowed" : "text-slate-400 hover:text-white"
                   }`}
-                  onClick={() => update(tt.id, 1, maxPerTicketType)}
+                  onClick={() => update(tt.id, 1, maxPerTicketType, stockAvailable)}
                   disabled={isPlusDisabled}
                 >
                   <Plus className="w-3 h-3" />

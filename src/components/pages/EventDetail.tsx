@@ -37,7 +37,7 @@ interface TicketType {
   price: number;
   stock_total: number;
   stock_available: number;
-  max_per_user: number;
+  max_per_user?: number;
   sort_order: number;
 }
 
@@ -106,9 +106,12 @@ function EventDetailContent() {
             price: tt.price,
             stock_total: tt.stockTotal || tt.stock_total || 0,
             stock_available: tt.stockAvailable !== undefined ? tt.stockAvailable : (tt.stock_available || 0),
-            max_per_user: tt.max_tickets_per_user !== undefined
+
+            // 🚀 ASIGNACIÓN CORREGIDA: Si viene de la BD lo respeta estricto; si es nulo, no le mete 4 por defecto
+            max_per_user: tt.max_tickets_per_user !== undefined && tt.max_tickets_per_user !== null
               ? Number(tt.max_tickets_per_user)
-              : (tt.maxPerUser || tt.max_per_user || 4),
+              : (tt.maxPerUser || tt.max_per_user || undefined),
+
             sort_order: tt.sortOrder || tt.sort_order || 0,
           }));
           setTicketTypes(mappedTickets);
@@ -148,21 +151,41 @@ function EventDetailContent() {
 
   const totalQty = Object.values(quantities).reduce((a, b) => a + b, 0);
 
+  // 1. Límite máximo general que le queda al usuario para este evento
   const maxEventLimit = event?.max_tickets_per_user !== undefined
     ? Number(event.max_tickets_per_user)
     : 4;
 
   const remainingEventLimit = Math.max(0, maxEventLimit - alreadyBought);
 
-  const handleSetQuantitiesSafe = (newQuantities: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => {
+  // 2. Manejador seguro con doble validación (Límite de Ticket + Límite del Evento)
+  const handleSetQuantitiesSafe = (
+    newQuantities: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)
+  ) => {
     setQuantities((prev) => {
       const updated = typeof newQuantities === 'function' ? newQuantities(prev) : newQuantities;
+
+      // A. Validar límite individual de cada tipo de ticket
+      for (const tt of ticketTypes) {
+        const qtyForThisType = updated[tt.id] || 0;
+        const maxForThisTicket = Math.min(tt.max_per_user ?? remainingEventLimit, tt.stock_available);
+
+        if (qtyForThisType > maxForThisTicket) {
+          alert(`No podés seleccionar más de ${maxForThisTicket} entradas del tipo "${tt.name}".`);
+          return prev;
+        }
+      }
+
+      // B. Validar límite global del evento combinado
       const proposedTotal = Object.values(updated).reduce((a, b) => a + b, 0);
 
       if (proposedTotal > remainingEventLimit) {
-        alert(`Límite excedido: Ya compraste ${alreadyBought} entrada(s). Solo podés seleccionar hasta ${remainingEventLimit} más.`);
+        alert(
+          `Límite general excedido: Ya compraste ${alreadyBought} entrada(s). Solo podés seleccionar hasta ${remainingEventLimit} entradas en total para este evento.`
+        );
         return prev;
       }
+
       return updated;
     });
   };
