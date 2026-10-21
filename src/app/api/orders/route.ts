@@ -224,8 +224,8 @@ export async function POST(request: NextRequest) {
         })),
 
         payer: {
-        email: session.user.email || undefined,
-        name: session.user.name || undefined,
+          email: session.user.email || undefined,
+          name: session.user.name || undefined,
         },
         external_reference: order.id,
         metadata: {
@@ -295,6 +295,11 @@ export async function POST(request: NextRequest) {
         envTokenPrefix: process.env.MERCADO_PAGO_ACCESS_TOKEN ? process.env.MERCADO_PAGO_ACCESS_TOKEN.slice(0, 10) : 'NULO',
         isUsingOrganizerToken: organizerAccessToken !== process.env.MERCADO_PAGO_ACCESS_TOKEN,
       });
+
+      // 🚀 LIBERACIÓN INMEDIATA: Marcamos la sesión de la fila como completada/liberada para este usuario
+      if (sessionToken) {
+        await completeQueueSession(sessionToken, eventId);
+      }
 
 
       // Retornamos SIEMPRE initPoint (según indicación oficial de MP)

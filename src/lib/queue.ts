@@ -355,3 +355,42 @@ export async function completeQueueSession(sessionToken: string, eventId: string
   })
   await processAdmissions(eventId)
 }
+
+/**
+ * Libera el cupo inmediatamente cuando un pago falla, se cancela o el usuario abandona.
+ */
+export async function releaseQueueSession(sessionToken: string, eventId: string) {
+  if (!sessionToken || !eventId) return;
+
+  await prisma.queueEntry.updateMany({
+    where: { 
+      sessionToken, 
+      eventId, 
+      status: 'admitted' 
+    },
+    data: { status: 'expired' },
+  });
+
+  // Admite inmediatamente al siguiente usuario en la fila
+  await processAdmissions(eventId);
+}
+
+/**
+ * Completa la sesión buscando directamente por userId y eventId 
+ * (útil para webhooks donde no se dispone del sessionToken del navegador).
+ */
+export async function completeQueueSessionByUserId(userId: string, eventId: string) {
+  if (!userId || !eventId) return;
+
+  await prisma.queueEntry.updateMany({
+    where: { 
+      userId, 
+      eventId, 
+      status: 'admitted' 
+    },
+    data: { status: 'completed' },
+  });
+
+  // Admite inmediatamente al siguiente usuario en la fila
+  await processAdmissions(eventId);
+}

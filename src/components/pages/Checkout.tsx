@@ -61,6 +61,26 @@ function CheckoutContent() {
   const [success, setSuccess] = useState(false);
   const [holderName, setHolderName] = useState("");
 
+  // Función helper para notificar la liberación del cupo al backend
+  const handleReleaseQueue = async () => {
+    if (!eventId) return;
+    const rawToken = window.sessionStorage.getItem(`queue_token_${eventId}`);
+    if (!rawToken) return;
+
+    try {
+      // Usamos keepalive para asegurar que el fetch se complete aun si la página se desmonta
+      await fetch('/api/queue/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken: rawToken, eventId }),
+        keepalive: true,
+      });
+      window.sessionStorage.removeItem(`queue_token_${eventId}`);
+    } catch (err) {
+      console.error('Error al liberar cupo de la fila:', err);
+    }
+  };
+
   useEffect(() => {
     const loadUserAndCheckoutData = async () => {
       try {
@@ -136,7 +156,7 @@ function CheckoutContent() {
         }
 
         console.log('🚨 [QUEUE STATUS RECEIVED]:', queueData);
-        
+
         if (queueData.status !== 'admitted') {
           toast.error('Aún no es tu turno. Te redirigimos a la sala de espera.');
           router.push(`/SalaEspera?event_id=${eventId}&checkout_url=${encodeURIComponent(`/Checkout?event_id=${eventId}`)}`);
@@ -182,6 +202,16 @@ function CheckoutContent() {
 
     return () => clearInterval(timer);
   }, [secondsLeft, eventId]);
+
+  // Escuchar si el usuario regresa de Mercado Pago con resultado de error o cancelación
+  useEffect(() => {
+    const result = searchParams.get('result');
+
+    if (result === 'failure' || result === 'cancel') {
+      toast.error('El pago fue cancelado o no pudo ser procesado. Liberamos tu reserva.');
+      handleReleaseQueue();
+    }
+  }, [searchParams]);
 
   const packSlice = event?.pack ? packCommissionSliceFromPack(event.pack) : null;
 
@@ -314,7 +344,10 @@ function CheckoutContent() {
       <div className="max-w-3xl mx-auto px-4">
         <Button
           variant="ghost"
-          onClick={() => router.push(`/EventDetail?id=${eventId}`)}
+          onClick={async () => {
+            await handleReleaseQueue();
+            router.push(`/EventDetail?id=${eventId}`);
+          }}
           className="text-slate-400 hover:text-white mb-6 gap-2"
         >
           <ArrowLeft className="w-4 h-4" /> Volver al evento

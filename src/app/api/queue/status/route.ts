@@ -1,3 +1,5 @@
+// api/queue/status/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getQueueStatus } from '@/lib/queue'
 

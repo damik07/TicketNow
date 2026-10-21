@@ -1,3 +1,5 @@
+// api/queue/admit/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { processAdmissions } from '@/lib/queue'
 
