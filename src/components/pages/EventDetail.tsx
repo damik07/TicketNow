@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import TicketSelector from "@/components/events/TicketSelector";
-import { Calendar, MapPin, ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
+import { Calendar, MapPin, ArrowLeft, Loader2, AlertTriangle, Navigation } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion } from "framer-motion";
@@ -15,7 +15,6 @@ interface Event {
   title: string;
   description: string;
   date_time: string;
-  end_date_time?: string;
   location_name: string;
   location_address?: string;
   location_lat?: number;
@@ -24,8 +23,6 @@ interface Event {
   banner_url?: string;
   status: string;
   featured: boolean;
-  total_capacity?: number;
-  min_price?: number;
   max_tickets_per_user?: number;
 }
 
@@ -41,7 +38,6 @@ interface TicketType {
   sort_order: number;
 }
 
-// Tipado para la respuesta cruda de la API de tipos de tickets
 interface ApiTicketType {
   id: string;
   eventId?: string;
@@ -65,7 +61,6 @@ const CATEGORY_LABELS = {
   festival: "Festival", fiesta: "Fiesta", gastronomia: "Gastronomía", otro: "Otro"
 };
 
-// Componente interno que consume los params de forma segura
 function EventDetailContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -78,11 +73,10 @@ function EventDetailContent() {
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
 
   const [alreadyBought, setAlreadyBought] = useState<number>(0);
+  const [boughtByTicketType, setBoughtByTicketType] = useState<Record<string, number>>({});
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
-  const [boughtByTicketType, setBoughtByTicketType] = useState<Record<string, number>>({});
-
-  // Carga inicial de Evento y Tickets
+  // 1. Carga de Evento y Mapeo Seguro de Atributos (camelCase / snake_case)
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -96,8 +90,27 @@ function EventDetailContent() {
         const eventData = await eventResponse.json();
         const ticketTypesData = await ticketTypesResponse.json();
 
-        const finalEvent = Array.isArray(eventData) ? eventData[0] : eventData;
-        setEvent(finalEvent || null);
+        const rawEvent = Array.isArray(eventData) ? eventData[0] : eventData;
+
+        if (rawEvent) {
+          // Normalización estricta de variables de la API
+          const normalizedEvent: Event = {
+            id: rawEvent.id,
+            title: rawEvent.title,
+            description: rawEvent.description || "",
+            date_time: rawEvent.dateTime || rawEvent.date_time || rawEvent.date || "",
+            location_name: rawEvent.locationName || rawEvent.location_name || "Lugar sin especificar",
+            location_address: rawEvent.locationAddress || rawEvent.location_address || "",
+            location_lat: rawEvent.locationLat !== undefined ? Number(rawEvent.locationLat) : (rawEvent.location_lat ? Number(rawEvent.location_lat) : undefined),
+            location_lng: rawEvent.locationLng !== undefined ? Number(rawEvent.locationLng) : (rawEvent.location_lng ? Number(rawEvent.location_lng) : undefined),
+            category: rawEvent.category || "",
+            banner_url: rawEvent.bannerUrl || rawEvent.banner_url || "",
+            status: rawEvent.status || "activo",
+            featured: Boolean(rawEvent.featured),
+            max_tickets_per_user: rawEvent.maxTicketsPerUser ?? rawEvent.max_tickets_per_user ?? 4,
+          };
+          setEvent(normalizedEvent);
+        }
 
         if (Array.isArray(ticketTypesData)) {
           const mappedTickets = ticketTypesData.map((tt: ApiTicketType) => ({
@@ -108,17 +121,12 @@ function EventDetailContent() {
             price: tt.price,
             stock_total: tt.stockTotal || tt.stock_total || 0,
             stock_available: tt.stockAvailable !== undefined ? tt.stockAvailable : (tt.stock_available || 0),
-
-            // 🚀 ASIGNACIÓN CORREGIDA: Si viene de la BD lo respeta estricto; si es nulo, no le mete 4 por defecto
-            max_per_user: tt.max_tickets_per_user !== undefined && tt.max_tickets_per_user !== null
+            max_per_user: (tt.max_tickets_per_user !== undefined && tt.max_tickets_per_user !== null)
               ? Number(tt.max_tickets_per_user)
-              : (tt.maxPerUser || tt.max_per_user || undefined),
-
+              : ((tt.maxPerUser || tt.max_per_user) ? Number(tt.maxPerUser || tt.max_per_user) : undefined),
             sort_order: tt.sortOrder || tt.sort_order || 0,
           }));
           setTicketTypes(mappedTickets);
-        } else {
-          setTicketTypes([]);
         }
       } catch (error) {
         console.error('Failed to load event data:', error);
@@ -130,7 +138,7 @@ function EventDetailContent() {
     loadData();
   }, [eventId]);
 
-  // Consulta cuántas entradas ya compró este usuario
+  // 2. Consulta de Historial de Compras
   useEffect(() => {
     const checkUserLimits = async () => {
       if (!eventId) return;
@@ -140,7 +148,6 @@ function EventDetailContent() {
           const data = await res.json();
           setIsAuthenticated(true);
           setAlreadyBought(data.ticketsBought || 0);
-          // Guardamos el desglose de lo que ya compró por tipo de ticket (ej: { "id_general": 2 })
           setBoughtByTicketType(data.ticketsBoughtByTypeId || {});
         } else {
           setIsAuthenticated(false);
@@ -153,39 +160,30 @@ function EventDetailContent() {
     checkUserLimits();
   }, [eventId]);
 
+  const maxEventLimit = event?.max_tickets_per_user !== undefined ? Number(event.max_tickets_per_user) : 4;
+  const remainingEventLimit = Math.max(0, maxEventLimit - alreadyBought);
+
+  // Límite ajustado por tipo restando las compras previas
   const ticketTypesWithRemaining = ticketTypes.map((tt) => {
     const boughtForThisType = boughtByTicketType[tt.id] || 0;
     const maxPerUserForType = tt.max_per_user ?? maxEventLimit;
-
-    // Límite real que le queda disponible para este tipo en particular:
     const maxRemainingForThisType = Math.max(0, maxPerUserForType - boughtForThisType);
 
     return {
       ...tt,
-      max_per_user: maxRemainingForThisType, // Pasamos al selector el límite neteado con sus compras previas
+      max_per_user: maxRemainingForThisType,
     };
   });
 
   const totalQty = Object.values(quantities).reduce((a, b) => a + b, 0);
 
-  // 1. Límite máximo general que le queda al usuario para este evento
-  const maxEventLimit = event?.max_tickets_per_user !== undefined
-    ? Number(event.max_tickets_per_user)
-    : 4;
-
-  const remainingEventLimit = Math.max(0, maxEventLimit - alreadyBought);
-
-  // 2. Manejador seguro con doble validación (Límite de Ticket + Límite del Evento)
-  const handleSetQuantitiesSafe = (
-    newQuantities: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)
-  ) => {
+  const handleSetQuantitiesSafe = (newQuantities: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)) => {
     setQuantities((prev) => {
       const updated = typeof newQuantities === 'function' ? newQuantities(prev) : newQuantities;
 
-      // A. Validar límite individual de cada tipo de ticket
-      for (const tt of ticketTypes) {
+      for (const tt of ticketTypesWithRemaining) {
         const qtyForThisType = updated[tt.id] || 0;
-        const maxForThisTicket = Math.min(tt.max_per_user ?? remainingEventLimit, tt.stock_available);
+        const maxForThisTicket = Math.min(tt.max_per_user, tt.stock_available);
 
         if (qtyForThisType > maxForThisTicket) {
           alert(`No podés seleccionar más de ${maxForThisTicket} entradas del tipo "${tt.name}".`);
@@ -193,16 +191,11 @@ function EventDetailContent() {
         }
       }
 
-      // B. Validar límite global del evento combinado
       const proposedTotal = Object.values(updated).reduce((a, b) => a + b, 0);
-
       if (proposedTotal > remainingEventLimit) {
-        alert(
-          `Límite general excedido: Ya compraste ${alreadyBought} entrada(s). Solo podés seleccionar hasta ${remainingEventLimit} entradas en total para este evento.`
-        );
+        alert(`Límite excedido: Ya compraste ${alreadyBought} entrada(s). Solo podés seleccionar hasta ${remainingEventLimit} más.`);
         return prev;
       }
-
       return updated;
     });
   };
@@ -228,6 +221,16 @@ function EventDetailContent() {
   }
 
   const eventDate = event.date_time ? new Date(event.date_time) : null;
+  const isValidDate = eventDate && !isNaN(eventDate.getTime());
+
+  // URL del Iframe de Google Maps
+  const getGoogleMapsEmbedUrl = () => {
+    if (event.location_lat && event.location_lng) {
+      return `https://maps.google.com/maps?q=${event.location_lat},${event.location_lng}&z=15&output=embed`;
+    }
+    const query = encodeURIComponent(`${event.location_name} ${event.location_address || ''}`);
+    return `https://maps.google.com/maps?q=${query}&z=15&output=embed`;
+  };
 
   const handleBuyClick = async () => {
     if (totalQty === 0) {
@@ -246,14 +249,8 @@ function EventDetailContent() {
 
       const data = await res.json();
 
-      if (!res.ok && data.action !== "rejected_limit_reached") {
+      if (!res.ok) {
         alert(data.error || "No se pudo iniciar la compra. ¿Estás logueado?");
-        setCheckingQueue(false);
-        return;
-      }
-
-      if (!res.ok && data.action === "rejected_limit_reached") {
-        alert(data.error);
         setCheckingQueue(false);
         return;
       }
@@ -319,7 +316,8 @@ function EventDetailContent() {
 
       <div className="max-w-6xl mx-auto px-4 -mt-32 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left - Event Info */}
+          
+          {/* Columna Izquierda: Información Principal */}
           <div className="lg:col-span-2">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               {event.category && (
@@ -331,33 +329,68 @@ function EventDetailContent() {
                 {event.title}
               </h1>
 
-              <div className="flex flex-wrap gap-6 mb-8">
-                {eventDate && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                      <Calendar className="w-5 h-5 text-violet-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white">
-                        {format(eventDate, "EEEE d 'de' MMMM, yyyy", { locale: es })}
-                      </p>
-                      <p className="text-xs text-slate-500">{format(eventDate, "HH:mm")} hs</p>
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                    <MapPin className="w-5 h-5 text-violet-400" />
+              {/* 📅 BLOQUE DE FECHA Y HORA */}
+              {isValidDate && (
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 mb-6 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center shrink-0 border border-violet-500/20">
+                    <Calendar className="w-6 h-6 text-violet-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-white">{event.location_name}</p>
-                    {event.location_address && (
-                      <p className="text-xs text-slate-500">{event.location_address}</p>
+                    <p className="text-sm font-semibold text-white capitalize">
+                      {format(eventDate, "EEEE d 'de' MMMM, yyyy", { locale: es })}
+                    </p>
+                    <p className="text-xs text-violet-300 font-medium mt-0.5">
+                      {format(eventDate, "HH:mm")} hs
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 📍 BLOQUE DE UBICACIÓN EN DOS CUADRANTES */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                
+                {/* Cuadrante Izquierdo: Nombre del lugar y Dirección */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-3 text-violet-400 font-semibold text-sm">
+                      <MapPin className="w-4 h-4" />
+                      <span>Ubicación del Evento</span>
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-1">{event.location_name}</h3>
+                    {event.location_address ? (
+                      <p className="text-sm text-slate-400 leading-snug">{event.location_address}</p>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic">Dirección no especificada</p>
                     )}
                   </div>
+
+                  {event.location_lat && event.location_lng && (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${event.location_lat},${event.location_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-violet-400 hover:text-violet-300 transition-colors"
+                    >
+                      <Navigation className="w-3.5 h-3.5" /> Abrir en Google Maps
+                    </a>
+                  )}
+                </div>
+
+                {/* Cuadrante Derecho: Mapa de Google Embed */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden h-48 md:h-auto min-h-[160px] relative">
+                  <iframe
+                    title="Mapa de ubicación"
+                    width="100%"
+                    height="100%"
+                    className="absolute inset-0 border-0 filter grayscale opacity-80 hover:grayscale-0 hover:opacity-100 transition-all duration-300"
+                    loading="lazy"
+                    allowFullScreen
+                    src={getGoogleMapsEmbedUrl()}
+                  />
                 </div>
               </div>
 
+              {/* Descripción */}
               <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6 mb-8">
                 <h3 className="text-lg font-semibold text-white mb-3">Descripción</h3>
                 <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-line">
@@ -367,7 +400,7 @@ function EventDetailContent() {
             </motion.div>
           </div>
 
-          {/* Right - Ticket Purchase */}
+          {/* Columna Derecha: Selección de Entradas */}
           <div className="lg:col-span-1">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -397,13 +430,12 @@ function EventDetailContent() {
                 )}
 
                 <TicketSelector
-                  ticketTypes={ticketTypesWithRemaining} // 👈 Pasamos la lista ajustada con las compras previas restadas
+                  ticketTypes={ticketTypesWithRemaining}
                   quantities={quantities}
                   setQuantities={handleSetQuantitiesSafe}
                   maxAllowedItems={remainingEventLimit}
                 />
 
-                {/* Caja de checkout fija o dinámica según el remanente */}
                 {(totalQty > 0 || remainingEventLimit === 0) && (
                   <div className="mt-6 pt-5 border-t border-slate-800">
                     {totalQty > 0 && (
@@ -438,7 +470,6 @@ function EventDetailContent() {
   );
 }
 
-// Exportación por defecto envuelta en Suspense para cumplir con Next.js App Router
 export default function EventDetail() {
   return (
     <React.Suspense fallback={
