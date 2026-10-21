@@ -80,6 +80,8 @@ function EventDetailContent() {
   const [alreadyBought, setAlreadyBought] = useState<number>(0);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
+  const [boughtByTicketType, setBoughtByTicketType] = useState<Record<string, number>>({});
+
   // Carga inicial de Evento y Tickets
   useEffect(() => {
     const loadData = async () => {
@@ -138,6 +140,8 @@ function EventDetailContent() {
           const data = await res.json();
           setIsAuthenticated(true);
           setAlreadyBought(data.ticketsBought || 0);
+          // Guardamos el desglose de lo que ya compró por tipo de ticket (ej: { "id_general": 2 })
+          setBoughtByTicketType(data.ticketsBoughtByTypeId || {});
         } else {
           setIsAuthenticated(false);
         }
@@ -148,6 +152,19 @@ function EventDetailContent() {
 
     checkUserLimits();
   }, [eventId]);
+
+  const ticketTypesWithRemaining = ticketTypes.map((tt) => {
+    const boughtForThisType = boughtByTicketType[tt.id] || 0;
+    const maxPerUserForType = tt.max_per_user ?? maxEventLimit;
+
+    // Límite real que le queda disponible para este tipo en particular:
+    const maxRemainingForThisType = Math.max(0, maxPerUserForType - boughtForThisType);
+
+    return {
+      ...tt,
+      max_per_user: maxRemainingForThisType, // Pasamos al selector el límite neteado con sus compras previas
+    };
+  });
 
   const totalQty = Object.values(quantities).reduce((a, b) => a + b, 0);
 
@@ -380,7 +397,7 @@ function EventDetailContent() {
                 )}
 
                 <TicketSelector
-                  ticketTypes={ticketTypes}
+                  ticketTypes={ticketTypesWithRemaining} // 👈 Pasamos la lista ajustada con las compras previas restadas
                   quantities={quantities}
                   setQuantities={handleSetQuantitiesSafe}
                   maxAllowedItems={remainingEventLimit}

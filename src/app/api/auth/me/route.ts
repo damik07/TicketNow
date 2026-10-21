@@ -34,26 +34,38 @@ export async function GET(request: NextRequest) {
     const eventId = searchParams.get("eventId")
 
     let ticketsBought = 0
+    const ticketsBoughtByTypeId: Record<string, number> = {}
 
-    // 💡 2. SI VIENE EL eventId, CONTAMOS LOS TICKETS CON ORDENES APROBADAS
+    // 💡 2. SI VIENE EL eventId, BUSCAMOS LOS TICKETS DE ÓRDENES APROBADAS Y AGRUPAMOS POR TIPO
     if (eventId) {
-      ticketsBought = await prisma.ticket.count({
+      const userTickets = await prisma.ticket.findMany({
         where: {
           eventId: eventId,
           userId: user.id,
           order: {
-            // Evaluamos usando el campo real de tu modelo Order
-            // Recordá cambiar "aprobado" si usás otro string (ej: "completado", "paid")
             paymentStatus: "aprobado"
           }
+        },
+        select: {
+          ticketTypeId: true
         }
       })
+
+      ticketsBought = userTickets.length
+
+      // Agrupamos la cantidad que el usuario compró para cada ticketTypeId
+      for (const t of userTickets) {
+        if (t.ticketTypeId) {
+          ticketsBoughtByTypeId[t.ticketTypeId] = (ticketsBoughtByTypeId[t.ticketTypeId] || 0) + 1
+        }
+      }
     }
 
-    // 💡 3. RETORNAMOS EL USUARIO Y EL CONTADOR AL CHECKOUT
+    // 💡 3. RETORNAMOS EL USUARIO, EL CONTADOR TOTAL Y EL DESGROSE POR TIPO DE TICKET
     return NextResponse.json({ 
       user, 
-      ticketsBought 
+      ticketsBought,
+      ticketsBoughtByTypeId
     })
 
   } catch (error) {
