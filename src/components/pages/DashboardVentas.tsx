@@ -105,7 +105,7 @@ export default function DashboardVentas() {
         min_price: e.minPrice || e.min_price,
       }));
 
-      // 2. Normalizar Órdenes
+      // 2. Normalizar Órdenes (Cálculo estricto del valor Neto de Entradas)
       const normalizedOrders = (Array.isArray(ordersData) ? ordersData : []).map((o: any) => {
         let ticketOnlyTotal = 0;
         const rawItems = o.orderItems || o.order_items || o.items;
@@ -113,22 +113,34 @@ export default function DashboardVentas() {
         if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
           rawItems.forEach((item: any) => {
             const ticketTypeObj = item.ticketType || item.ticket_type;
-            
-            // Priorizamos el precio base neto del ticket
-            const basePrice = 
-              ticketTypeObj?.price ?? 
-              item.unitPrice ?? 
-              item.unit_price ?? 
-              item.price ?? 
-              0;
+            const quantity = Number(item.quantity ?? item.qty ?? 1);
 
-            const quantity = item.quantity ?? item.qty ?? 1;
-            ticketOnlyTotal += Number(basePrice) * Number(quantity);
+            // 1. Buscamos el precio base neto del TicketType si viene anidado
+            let baseUnitPrice = ticketTypeObj?.price;
+
+            // 2. Si no viene el ticketType, descontamos la comisión del unitPrice cobrado
+            if (baseUnitPrice === undefined || baseUnitPrice === null) {
+              const chargedUnitPrice = Number(item.unitPrice ?? item.unit_price ?? item.price ?? 0);
+
+              // Si la orden guarda la comisión individual por ítem/ticket
+              const serviceChargePerUnit = Number(item.serviceCharge ?? item.service_charge ?? 0);
+
+              if (serviceChargePerUnit > 0) {
+                baseUnitPrice = Math.max(0, chargedUnitPrice - serviceChargePerUnit);
+              } else {
+                baseUnitPrice = chargedUnitPrice;
+              }
+            }
+
+            ticketOnlyTotal += Number(baseUnitPrice) * quantity;
           });
         }
 
-        // Fallback al subtotal o al totalAmount directo
-        const rawTotal = o.subtotalAmount ?? o.subtotal_amount ?? o.subtotal ?? o.totalAmount ?? o.total_amount ?? 0;
+        // Si no se pudieron procesar ítems, usamos el subtotal neto de la orden
+        const netSubtotal = o.subtotalAmount ?? o.subtotal_amount ?? o.subtotal;
+        const fallbackAmount = netSubtotal !== undefined && netSubtotal !== null
+          ? Number(netSubtotal)
+          : Number(o.totalAmount ?? o.total_amount ?? 0);
 
         return {
           id: o.id,
@@ -138,7 +150,8 @@ export default function DashboardVentas() {
           user_name: o.userName || o.user_name,
           event_title: o.eventTitle || o.event_title,
           items: rawItems || [],
-          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : Number(rawTotal),
+          // 🚀 Asignamos el valor neto exclusivo de entradas
+          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : fallbackAmount,
           payment_status: String(o.paymentStatus || o.payment_status || 'aprobado').toLowerCase(),
           payment_method: o.paymentMethod || o.payment_method,
           created_date: o.createdAt || o.created_date,

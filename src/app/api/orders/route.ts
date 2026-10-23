@@ -1,3 +1,5 @@
+// app/api/orders/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -31,6 +33,7 @@ export async function GET(request: NextRequest) {
         }),
       },
       include: {
+        // 🚀 Traemos la relación del ticketType para disponer del precio nominal estricto
         items: {
           include: { ticketType: true }
         },
@@ -106,7 +109,9 @@ export async function POST(request: NextRequest) {
       ticketTypeId: string
       ticketTypeName: string
       quantity: number
-      unitPrice: number
+      basePrice: number          // 👈 Precio nominal de la entrada (para el Organizador)
+      serviceChargeUnit: number  // 👈 Comisión de la plataforma por entrada
+      unitPrice: number          // 👈 Precio final que paga el Comprador
       subtotal: number
     }> = []
 
@@ -125,13 +130,17 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      const basePrice = ticketType.price
       const unitPrice = orderLineBuyerUnitPrice(ticketType.price, ticketType.name, packSlice)
+      const serviceChargeUnit = ticketPlatformFeeUnit(ticketType.price, packSlice)
       const subtotal = roundMoney(unitPrice * quantity)
 
       pricedItems.push({
         ticketTypeId,
         ticketTypeName: ticketType.name,
         quantity,
+        basePrice,
+        serviceChargeUnit,
         unitPrice,
         subtotal,
       })
@@ -153,7 +162,8 @@ export async function POST(request: NextRequest) {
             ticketTypeId: row.ticketTypeId,
             ticketTypeName: row.ticketTypeName,
             quantity: row.quantity,
-            unitPrice: row.unitPrice,
+            unitPrice: row.unitPrice,                 // Precio final cobrado al usuario
+            serviceCharge: row.serviceChargeUnit,    // 🚀 Comisión individual guardada de forma explicita
             subtotal: row.subtotal,
           })),
         },
@@ -175,14 +185,8 @@ export async function POST(request: NextRequest) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const webhookBaseUrl = process.env.MERCADO_PAGO_WEBHOOK_URL || appUrl
 
-      const packSlice = packCommissionSliceFromPack(event.pack)
       const totalServiceCharge = roundMoney(
-        pricedItems.reduce((acc, item) => {
-          const ticketType = event.ticketTypes.find((tt) => tt.id === item.ticketTypeId)
-          const listPrice = ticketType?.price ?? 0
-          const unitFee = ticketPlatformFeeUnit(listPrice, packSlice)
-          return acc + roundMoney(unitFee * item.quantity)
-        }, 0)
+        pricedItems.reduce((acc, item) => acc + roundMoney(item.serviceChargeUnit * item.quantity), 0)
       )
 
       const disableMarketplaceFee = process.env.MERCADO_PAGO_DISABLE_MARKETPLACE_FEE === 'true'
@@ -200,20 +204,16 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // 1. Cliente instanciado dinámicamente con el Access Token del organizador
       const organizerMpClient = new MercadoPagoConfig({
         accessToken: organizerAccessToken,
       })
 
-      // 2. Pasamos el cliente a la clase Preference
       const preference = new Preference(organizerMpClient)
 
-      // 3. Inferimos el tipo exacto del body soportado por la versión del SDK
       type PreferenceBody = Parameters<typeof preference.create>[0]['body']
 
       const shouldApplyMarketplaceFee = !disableMarketplaceFee && totalServiceCharge > 0
 
-      // 4. Construir el PreferenceBody exacto según la especificación de Checkout Pro
       const preferenceBody: PreferenceBody = {
         items: pricedItems.map((item) => ({
           id: item.ticketTypeId,
@@ -278,31 +278,10 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      console.log('[MP Preference Created]:', {
-        orderId: order.id,
-        preferenceId: mpPreference.id,
-        initPoint: mpPreference.init_point,
-        externalReference: mpPreference.external_reference,
-        totalAmount,
-        marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
-        tokenPrefix: organizerAccessToken.slice(0, 10),
-        preferenceBody: JSON.stringify(preferenceBody),
-      });
-
-      console.log('[DEBUG MP Token]:', {
-        organizerId: event.organizer.id,
-        organizerTokenPrefix: organizerAccessToken ? organizerAccessToken.slice(0, 10) : 'NULO',
-        envTokenPrefix: process.env.MERCADO_PAGO_ACCESS_TOKEN ? process.env.MERCADO_PAGO_ACCESS_TOKEN.slice(0, 10) : 'NULO',
-        isUsingOrganizerToken: organizerAccessToken !== process.env.MERCADO_PAGO_ACCESS_TOKEN,
-      });
-
-      // 🚀 LIBERACIÓN INMEDIATA: Marcamos la sesión de la fila como completada/liberada para este usuario
       if (sessionToken) {
         await completeQueueSession(sessionToken, eventId);
       }
 
-
-      // Retornamos SIEMPRE initPoint (según indicación oficial de MP)
       return NextResponse.json({
         order,
         initPoint: mpPreference.init_point,
@@ -346,8 +325,8 @@ export async function POST(request: NextRequest) {
             usageStatus: 'no_usado',
             holderName: session.user.name || 'Usuario',
             holderEmail: session.user.email || '',
-            consumptionBalance: item.ticketTypeName.toLowerCase().includes('consumición') ? item.unitPrice : 0,
-            consumptionInitial: item.ticketTypeName.toLowerCase().includes('consumición') ? item.unitPrice : 0,
+            consumptionBalance: item.ticketTypeName.toLowerCase().includes('consumición') ? item.basePrice : 0,
+            consumptionInitial: item.ticketTypeName.toLowerCase().includes('consumición') ? item.basePrice : 0,
           },
         })
         createdTickets.push(ticket)
@@ -361,9 +340,9 @@ export async function POST(request: NextRequest) {
               eventTitle: event.title,
               ticketTypeName: item.ticketTypeName,
               type: 'credito',
-              amount: item.unitPrice,
+              amount: item.basePrice,
               balanceBefore: 0,
-              balanceAfter: item.unitPrice,
+              balanceAfter: item.basePrice,
               description: 'Carga inicial de saldo',
             },
           })
