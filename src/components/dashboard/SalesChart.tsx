@@ -1,7 +1,7 @@
 // src/components/dashboard/SalesChart.tsx
 import React, { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { format, startOfDay, differenceInDays, addDays } from "date-fns";
+import { format, startOfDay, differenceInDays, addDays, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 
 interface Order {
@@ -13,15 +13,13 @@ interface Order {
 
 interface SalesChartProps {
   orders: Order[];
-  startDate: string; // 👈 Agregamos la fecha de inicio seleccionada
-  endDate: string;   // 👈 Agregamos la fecha de fin seleccionada
+  startDate: string;
+  endDate: string;
 }
 
 export default function SalesChart({ orders, startDate, endDate }: SalesChartProps) {
   
   const chartData = useMemo(() => {
-    // Definimos los límites del gráfico basándonos estrictamente en los filtros elegidos
-    // Si no hay filtros puestos por el usuario, usamos el fallback por defecto (últimos 7 días)
     let minDate = startOfDay(subDays(new Date(), 7));
     let maxDate = startOfDay(new Date());
 
@@ -35,29 +33,35 @@ export default function SalesChart({ orders, startDate, endDate }: SalesChartPro
       if (!isNaN(parsedEnd.getTime())) maxDate = startOfDay(parsedEnd);
     }
 
-    // Calculamos los días reales del rango seleccionado
     const daysRange = Math.max(differenceInDays(maxDate, minDate) + 1, 1);
 
-    // Armamos el eje X día por día de forma fija
     return Array.from({ length: daysRange }, (_, i) => {
       const day = addDays(minDate, i);
       const dayStr = format(day, "yyyy-MM-dd");
 
-      // Buscamos si hay órdenes para este día específico
+      // 🚀 Buscamos SOLAMENTE órdenes aprobadas para este día en la zona horaria local
       const dayOrders = orders.filter((o: Order) => {
         if (!o.created_date) return false;
-        // Normalizamos la fecha de la orden para compararla limpiamente (YYYY-MM-DD)
-        const oDateStr = o.created_date.split("T")[0];
+
+        // Validamos estado de pago aprobado
+        const isApproved = o.payment_status === "aprobado" || o.payment_status === "approved";
+        if (!isApproved) return false;
+
+        // Formateamos la fecha en hora local antes de comparar
+        const orderDate = new Date(o.created_date);
+        if (isNaN(orderDate.getTime())) return false;
+
+        const oDateStr = format(orderDate, "yyyy-MM-dd");
         return oDateStr === dayStr;
       });
 
       return {
         date: format(day, "dd MMM", { locale: es }),
-        ventas: dayOrders.reduce((sum: number, o: Order) => sum + (o.total_amount || 0), 0),
+        ventas: dayOrders.reduce((sum: number, o: Order) => sum + (Number(o.total_amount) || 0), 0),
         cantidad: dayOrders.length,
       };
     });
-  }, [orders, startDate, endDate]); // 👈 El gráfico ahora reacciona inmediatamente al cambiar las fechas
+  }, [orders, startDate, endDate]);
 
   return (
     <div className="bg-slate-900/50 border border-slate-800/50 rounded-2xl p-6">
@@ -75,7 +79,7 @@ export default function SalesChart({ orders, startDate, endDate }: SalesChartPro
               <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip
                 contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", color: "#fff" }}
-                formatter={(value) => [`$${value.toLocaleString("es-AR")}`, "Ventas"]}
+                formatter={(value: any) => [`$${Number(value).toLocaleString("es-AR")}`, "Ventas"]}
               />
               <Bar dataKey="ventas" fill="url(#gradient)" radius={[6, 6, 0, 0]} />
               <defs>
@@ -91,6 +95,3 @@ export default function SalesChart({ orders, startDate, endDate }: SalesChartPro
     </div>
   );
 }
-
-// Helper auxiliar rápido por si no tenías subDays importado arriba
-import { subDays } from "date-fns";

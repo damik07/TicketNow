@@ -108,19 +108,34 @@ export default function DashboardVentas() {
         min_price: e.minPrice || e.min_price,
       }));
 
-      // 2. Normalizar Órdenes
+      // 2. Normalizar Órdenes (Extracción estricta del valor nominal del ticket)
       const normalizedOrders = ordersData.map((o: any) => {
         let ticketOnlyTotal = 0;
         const rawItems = o.orderItems || o.order_items || o.items;
 
-        if (rawItems && Array.isArray(rawItems)) {
+        if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
           rawItems.forEach((item: any) => {
+            // Búsqueda del precio base nominal del ticketType (sin comisión)
             const ticketTypeObj = item.ticketType || item.ticket_type;
-            const basePrice = ticketTypeObj?.price ?? item.unitPrice ?? 0;
+
+            // Evaluamos en orden de prioridad: 
+            // 1. Precio base guardado en el ticketType
+            // 2. unit_price o unitPrice
+            // 3. price
+            const basePrice =
+              ticketTypeObj?.price ??
+              item.unitPrice ??
+              item.unit_price ??
+              item.price ??
+              0;
+
             const quantity = item.quantity ?? 0;
-            ticketOnlyTotal += basePrice * quantity;
+            ticketOnlyTotal += Number(basePrice) * Number(quantity);
           });
         }
+
+        // Si por alguna razón el ítem no trae precio, usamos el subtotal neto de la orden
+        const orderSubtotal = o.subtotalAmount || o.subtotal_amount || o.subtotal;
 
         return {
           id: o.id,
@@ -130,7 +145,8 @@ export default function DashboardVentas() {
           user_name: o.userName || o.user_name,
           event_title: o.eventTitle || o.event_title,
           items: rawItems || [],
-          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : (o.totalAmount || o.total_amount || 0),
+          // 🚀 AHORA SOLO TOMA EL NETO DE LAS ENTRADAS Y NUNCA EL TOTAL CON SERVICE CHARGE
+          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : Number(orderSubtotal || 0),
           payment_status: o.paymentStatus || o.payment_status,
           payment_method: o.paymentMethod || o.payment_method,
           created_date: o.createdAt || o.created_date,
