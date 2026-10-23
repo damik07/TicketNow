@@ -36,9 +36,6 @@ export async function GET(request: NextRequest) {
         items: {
           include: { ticketType: true }
         },
-        orderItems: {
-          include: { ticketType: true }
-        },
         user: {
           select: {
             id: true,
