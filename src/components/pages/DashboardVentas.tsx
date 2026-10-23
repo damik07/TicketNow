@@ -108,39 +108,33 @@ export default function DashboardVentas() {
       // 2. Normalizar Órdenes (Cálculo estricto del valor Neto de Entradas)
       const normalizedOrders = (Array.isArray(ordersData) ? ordersData : []).map((o: any) => {
         let ticketOnlyTotal = 0;
-        const rawItems = o.orderItems || o.order_items || o.items;
+
+        // 🚀 Inspeccionamos cualquier variante donde Prisma devuelva los OrderItems
+        const rawItems = o.items || o.orderItems || o.order_items;
 
         if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
           rawItems.forEach((item: any) => {
             const ticketTypeObj = item.ticketType || item.ticket_type;
             const quantity = Number(item.quantity ?? item.qty ?? 1);
 
-            // 1. Buscamos el precio base neto del TicketType si viene anidado
-            let baseUnitPrice = ticketTypeObj?.price;
+            // 1. Preferencia 1: Precio base nominal del ticket type asociado
+            let basePrice = ticketTypeObj?.price;
 
-            // 2. Si no viene el ticketType, descontamos la comisión del unitPrice cobrado
-            if (baseUnitPrice === undefined || baseUnitPrice === null) {
-              const chargedUnitPrice = Number(item.unitPrice ?? item.unit_price ?? item.price ?? 0);
+            // 2. Preferencia 2: Si el ítem guardó la comisión, restamos unitPrice - serviceCharge
+            if (basePrice === undefined || basePrice === null) {
+              const unitPrice = Number(item.unitPrice ?? item.unit_price ?? item.price ?? 0);
+              const serviceCharge = Number(item.serviceCharge ?? item.service_charge ?? 0);
 
-              // Si la orden guarda la comisión individual por ítem/ticket
-              const serviceChargePerUnit = Number(item.serviceCharge ?? item.service_charge ?? 0);
-
-              if (serviceChargePerUnit > 0) {
-                baseUnitPrice = Math.max(0, chargedUnitPrice - serviceChargePerUnit);
+              if (serviceCharge > 0) {
+                basePrice = Math.max(0, unitPrice - serviceCharge);
               } else {
-                baseUnitPrice = chargedUnitPrice;
+                basePrice = unitPrice;
               }
             }
 
-            ticketOnlyTotal += Number(baseUnitPrice) * quantity;
+            ticketOnlyTotal += Number(basePrice) * quantity;
           });
         }
-
-        // Si no se pudieron procesar ítems, usamos el subtotal neto de la orden
-        const netSubtotal = o.subtotalAmount ?? o.subtotal_amount ?? o.subtotal;
-        const fallbackAmount = netSubtotal !== undefined && netSubtotal !== null
-          ? Number(netSubtotal)
-          : Number(o.totalAmount ?? o.total_amount ?? 0);
 
         return {
           id: o.id,
@@ -150,8 +144,8 @@ export default function DashboardVentas() {
           user_name: o.userName || o.user_name,
           event_title: o.eventTitle || o.event_title,
           items: rawItems || [],
-          // 🚀 Asignamos el valor neto exclusivo de entradas
-          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : fallbackAmount,
+          // 🚀 ESTE VALOR AHORA ES 100% NETO DE ENTRADAS (SIN SERVICE CHARGE)
+          total_amount: ticketOnlyTotal,
           payment_status: String(o.paymentStatus || o.payment_status || 'aprobado').toLowerCase(),
           payment_method: o.paymentMethod || o.payment_method,
           created_date: o.createdAt || o.created_date,
