@@ -1,5 +1,3 @@
-// app/api/orders/route.ts
-
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -11,6 +9,7 @@ import {
   ticketPlatformFeeUnit,
 } from '@/lib/pack-commission'
 import { completeQueueSession, validateCheckoutAccess } from '@/lib/queue'
+
 import { getValidOrganizerAccessToken } from '@/lib/mercadopago'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 
@@ -32,7 +31,6 @@ export async function GET(request: NextRequest) {
         }),
       },
       include: {
-        // 🚀 TRAYEMOS EXPLÍCITAMENTE LOS ORDER ITEMS DESAGREGADOS Y SU TICKET TYPE
         items: {
           include: { ticketType: true }
         },
@@ -108,9 +106,8 @@ export async function POST(request: NextRequest) {
       ticketTypeId: string
       ticketTypeName: string
       quantity: number
-      basePrice: number
-      serviceChargeUnit: number
       unitPrice: number
+      serviceCharge: number
       subtotal: number
     }> = []
 
@@ -129,7 +126,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const basePrice = ticketType.price
       const unitPrice = orderLineBuyerUnitPrice(ticketType.price, ticketType.name, packSlice)
       const serviceChargeUnit = ticketPlatformFeeUnit(ticketType.price, packSlice)
       const subtotal = roundMoney(unitPrice * quantity)
@@ -138,9 +134,8 @@ export async function POST(request: NextRequest) {
         ticketTypeId,
         ticketTypeName: ticketType.name,
         quantity,
-        basePrice,
-        serviceChargeUnit,
         unitPrice,
+        serviceCharge: serviceChargeUnit,
         subtotal,
       })
     }
@@ -149,7 +144,6 @@ export async function POST(request: NextRequest) {
     const isSimulated = process.env.NEXT_PUBLIC_PAYMENT_SIMULATED === 'true'
     const finalStatus = isSimulated ? 'aprobado' : 'pendiente'
 
-    // 🚀 INSERCIÓN EXPLÍCITA DE FILAS EN OrderItem
     const order = await prisma.order.create({
       data: {
         userId: session.user.id,
@@ -163,7 +157,7 @@ export async function POST(request: NextRequest) {
             ticketTypeName: row.ticketTypeName,
             quantity: row.quantity,
             unitPrice: row.unitPrice,
-            serviceCharge: row.serviceChargeUnit,
+            serviceCharge: row.serviceCharge,
             subtotal: row.subtotal,
           })),
         },
@@ -180,13 +174,20 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // PROCESAMIENTO MERCADO PAGO O SIMULACIÓN
+    // ==========================================
+    // 💡 CASO A: PAGO REAL O PRUEBA CON MERCADO PAGO (CHECKOUT PRO)
+    // ==========================================
     if (!isSimulated && paymentMethod === 'mercadopago') {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       const webhookBaseUrl = process.env.MERCADO_PAGO_WEBHOOK_URL || appUrl
 
       const totalServiceCharge = roundMoney(
-        pricedItems.reduce((acc, item) => acc + roundMoney(item.serviceChargeUnit * item.quantity), 0)
+        pricedItems.reduce((acc, item) => {
+          const ticketType = event.ticketTypes.find((tt) => tt.id === item.ticketTypeId)
+          const listPrice = ticketType?.price ?? 0
+          const unitFee = ticketPlatformFeeUnit(listPrice, packSlice)
+          return acc + roundMoney(unitFee * item.quantity)
+        }, 0)
       )
 
       const disableMarketplaceFee = process.env.MERCADO_PAGO_DISABLE_MARKETPLACE_FEE === 'true'
@@ -196,17 +197,28 @@ export async function POST(request: NextRequest) {
         organizerAccessToken = await getValidOrganizerAccessToken(event.organizer.id)
       } catch {
         return NextResponse.json(
-          { error: 'El organizador del evento debe vincular Mercado Pago antes de vender entradas.' },
+          {
+            error:
+              'El organizador del evento debe vincular Mercado Pago antes de vender entradas.',
+          },
           { status: 400 }
         )
       }
 
-      const organizerMpClient = new MercadoPagoConfig({ accessToken: organizerAccessToken })
+      // 1. Cliente instanciado dinámicamente con el Access Token del organizador
+      const organizerMpClient = new MercadoPagoConfig({
+        accessToken: organizerAccessToken,
+      })
+
+      // 2. Pasamos el cliente a la clase Preference
       const preference = new Preference(organizerMpClient)
+
+      // 3. Inferimos el tipo exacto del body soportado por la versión del SDK
       type PreferenceBody = Parameters<typeof preference.create>[0]['body']
 
       const shouldApplyMarketplaceFee = !disableMarketplaceFee && totalServiceCharge > 0
 
+      // 4. Construir el PreferenceBody exacto según la especificación de Checkout Pro
       const preferenceBody: PreferenceBody = {
         items: pricedItems.map((item) => ({
           id: item.ticketTypeId,
@@ -215,19 +227,25 @@ export async function POST(request: NextRequest) {
           unit_price: Number(item.unitPrice),
           currency_id: 'ARS',
         })),
+
         payer: {
           email: session.user.email || undefined,
           name: session.user.name || undefined,
         },
         external_reference: order.id,
-        metadata: { order_id: order.id, event_id: eventId },
+        metadata: {
+          order_id: order.id,
+          event_id: eventId,
+        },
         back_urls: {
           success: `${appUrl}/MisEntradas?result=success`,
           failure: `${appUrl}/Checkout?event_id=${eventId}&result=failure`,
           pending: `${appUrl}/MisEntradas?result=pending`,
         },
         auto_return: 'approved',
+
         ...(shouldApplyMarketplaceFee && { marketplace_fee: Number(totalServiceCharge) }),
+
         ...(webhookBaseUrl.startsWith('https://') && {
           notification_url: `${webhookBaseUrl}/api/webhooks/mercadopago`,
         }),
@@ -235,17 +253,46 @@ export async function POST(request: NextRequest) {
 
       let mpPreference
       try {
-        mpPreference = await preference.create({ body: preferenceBody })
+        mpPreference = await preference.create({
+          body: preferenceBody,
+        })
       } catch (mpError: unknown) {
+        const mpMessage =
+          mpError instanceof Error
+            ? mpError.message
+            : typeof mpError === 'object' && mpError !== null && 'message' in mpError
+              ? String((mpError as { message: unknown }).message)
+              : 'Error desconocido'
+
+        console.error('[MP Preference Error]:', {
+          orderId: order.id,
+          organizerId: event.organizer.id,
+          totalAmount,
+          marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
+          mpMessage,
+        })
+
         await prisma.order.update({
           where: { id: order.id },
           data: { paymentStatus: 'cancelado' },
         })
+
         return NextResponse.json(
-          { error: 'No se pudo generar la pasarela de Mercado Pago.' },
+          { error: 'No se pudo generar la pasarela de Mercado Pago. Verificá la vinculación del organizador.' },
           { status: 502 }
         )
       }
+
+      console.log('[MP Preference Created]:', {
+        orderId: order.id,
+        preferenceId: mpPreference.id,
+        initPoint: mpPreference.init_point,
+        externalReference: mpPreference.external_reference,
+        totalAmount,
+        marketplaceFee: disableMarketplaceFee ? 0 : totalServiceCharge,
+        tokenPrefix: organizerAccessToken.slice(0, 10),
+        preferenceBody: JSON.stringify(preferenceBody),
+      });
 
       if (sessionToken) {
         await completeQueueSession(sessionToken, eventId);
@@ -261,6 +308,9 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // ==========================================
+    // 💡 CASO B: PROCESO SIMULADO
+    // ==========================================
     if (sessionToken) {
       await completeQueueSession(sessionToken, eventId)
     }
@@ -268,7 +318,9 @@ export async function POST(request: NextRequest) {
     for (const item of pricedItems) {
       await prisma.ticketType.update({
         where: { id: item.ticketTypeId },
-        data: { stockAvailable: { decrement: item.quantity } },
+        data: {
+          stockAvailable: { decrement: item.quantity },
+        },
       })
     }
 
@@ -289,11 +341,28 @@ export async function POST(request: NextRequest) {
             usageStatus: 'no_usado',
             holderName: session.user.name || 'Usuario',
             holderEmail: session.user.email || '',
-            consumptionBalance: item.ticketTypeName.toLowerCase().includes('consumición') ? item.basePrice : 0,
-            consumptionInitial: item.ticketTypeName.toLowerCase().includes('consumición') ? item.basePrice : 0,
+            consumptionBalance: item.ticketTypeName.toLowerCase().includes('consumición') ? item.unitPrice : 0,
+            consumptionInitial: item.ticketTypeName.toLowerCase().includes('consumición') ? item.unitPrice : 0,
           },
         })
         createdTickets.push(ticket)
+
+        if (item.ticketTypeName.toLowerCase().includes('consumición')) {
+          await prisma.consumptionTransaction.create({
+            data: {
+              ticketId: ticket.id,
+              userId: session.user.id,
+              eventId,
+              eventTitle: event.title,
+              ticketTypeName: item.ticketTypeName,
+              type: 'credito',
+              amount: item.unitPrice,
+              balanceBefore: 0,
+              balanceAfter: item.unitPrice,
+              description: 'Carga inicial de saldo',
+            },
+          })
+        }
       }
     }
 
