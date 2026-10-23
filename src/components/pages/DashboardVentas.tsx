@@ -10,7 +10,7 @@ import StatsGrid from "@/components/dashboard/StatsGrid";
 import SalesChart from "@/components/dashboard/SalesChart";
 import EventsTable from "@/components/dashboard/EventsTable";
 import MpConnectBanner from "@/components/dashboard/MpConnectBanner";
-import DateFilter from "@/components/dashboard/DateFilter"; // 👈 SOLUCIÓN 1: Importación agregada correctamente
+import DateFilter from "@/components/dashboard/DateFilter";
 
 interface Organizer {
   id: string;
@@ -52,6 +52,7 @@ interface Ticket {
   ticket_type_id: string;
   event_id: string;
   user_id: string;
+  created_date?: string | null;
 }
 
 export default function DashboardVentas() {
@@ -67,18 +68,14 @@ export default function DashboardVentas() {
   const [refreshInterval, setRefreshInterval] = useState<number>(300);
 
   const [endDate, setEndDate] = useState<string>(() => {
-    const hoy = new Date();
-    return hoy.toISOString().split('T')[0];
+    return new Date().toISOString().split('T')[0];
   });
 
-  // Inicializamos startDate con la fecha de hace 7 días
   const [startDate, setStartDate] = useState<string>(() => {
     const haceSieteDias = new Date();
     haceSieteDias.setDate(haceSieteDias.getDate() - 7);
     return haceSieteDias.toISOString().split('T')[0];
   });
-
-
 
   const loadData = useCallback(async (currentOrganizer: Organizer) => {
     if (isLoadingRef.current) return;
@@ -97,7 +94,7 @@ export default function DashboardVentas() {
       const ticketsData = await ticketsResponse.json();
 
       // 1. Normalizar Eventos
-      const normalizedEvents = eventsData.map((e: any) => ({
+      const normalizedEvents = (Array.isArray(eventsData) ? eventsData : []).map((e: any) => ({
         id: e.id,
         title: e.title,
         status: e.status,
@@ -108,34 +105,30 @@ export default function DashboardVentas() {
         min_price: e.minPrice || e.min_price,
       }));
 
-      // 2. Normalizar Órdenes (Extracción estricta del valor nominal del ticket)
-      const normalizedOrders = ordersData.map((o: any) => {
+      // 2. Normalizar Órdenes
+      const normalizedOrders = (Array.isArray(ordersData) ? ordersData : []).map((o: any) => {
         let ticketOnlyTotal = 0;
         const rawItems = o.orderItems || o.order_items || o.items;
 
         if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
           rawItems.forEach((item: any) => {
-            // Búsqueda del precio base nominal del ticketType (sin comisión)
             const ticketTypeObj = item.ticketType || item.ticket_type;
-
-            // Evaluamos en orden de prioridad: 
-            // 1. Precio base guardado en el ticketType
-            // 2. unit_price o unitPrice
-            // 3. price
-            const basePrice =
-              ticketTypeObj?.price ??
-              item.unitPrice ??
-              item.unit_price ??
-              item.price ??
+            
+            // Priorizamos el precio base neto del ticket
+            const basePrice = 
+              ticketTypeObj?.price ?? 
+              item.unitPrice ?? 
+              item.unit_price ?? 
+              item.price ?? 
               0;
 
-            const quantity = item.quantity ?? 0;
+            const quantity = item.quantity ?? item.qty ?? 1;
             ticketOnlyTotal += Number(basePrice) * Number(quantity);
           });
         }
 
-        // Si por alguna razón el ítem no trae precio, usamos el subtotal neto de la orden
-        const orderSubtotal = o.subtotalAmount || o.subtotal_amount || o.subtotal;
+        // Fallback al subtotal o al totalAmount directo
+        const rawTotal = o.subtotalAmount ?? o.subtotal_amount ?? o.subtotal ?? o.totalAmount ?? o.total_amount ?? 0;
 
         return {
           id: o.id,
@@ -145,16 +138,15 @@ export default function DashboardVentas() {
           user_name: o.userName || o.user_name,
           event_title: o.eventTitle || o.event_title,
           items: rawItems || [],
-          // 🚀 AHORA SOLO TOMA EL NETO DE LAS ENTRADAS Y NUNCA EL TOTAL CON SERVICE CHARGE
-          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : Number(orderSubtotal || 0),
-          payment_status: o.paymentStatus || o.payment_status,
+          total_amount: ticketOnlyTotal > 0 ? ticketOnlyTotal : Number(rawTotal),
+          payment_status: String(o.paymentStatus || o.payment_status || 'aprobado').toLowerCase(),
           payment_method: o.paymentMethod || o.payment_method,
           created_date: o.createdAt || o.created_date,
         };
       });
 
       // 3. Normalizar Tickets
-      const normalizedTickets = ticketsData.map((t: any) => ({
+      const normalizedTickets = (Array.isArray(ticketsData) ? ticketsData : []).map((t: any) => ({
         id: t.id,
         order_id: t.orderId || t.order_id,
         ticket_type_id: t.ticketTypeId || t.ticket_type_id,
@@ -177,37 +169,26 @@ export default function DashboardVentas() {
     }
   }, []);
 
-  // 🛡️ SOLUCIÓN 2: Filtro useMemo optimizado y seguro para evitar problemas de tipos
   const filteredData = useMemo(() => {
     let orders = [...allOrders];
     let tickets = [...allTickets];
 
     if (startDate) {
-      // Forzamos el inicio del día en formato local
       const start = new Date(`${startDate}T00:00:00`);
-      orders = orders.filter((o) => {
-        if (!o.created_date) return false;
-        return new Date(o.created_date) >= start;
-      });
-
+      orders = orders.filter((o) => o.created_date && new Date(o.created_date) >= start);
       tickets = tickets.filter((t) => {
         const parentOrder = orders.find(o => o.id === t.order_id);
-        const ticketDate = parentOrder ? new Date(parentOrder.created_date) : null;
+        const ticketDate = parentOrder ? new Date(parentOrder.created_date) : (t.created_date ? new Date(t.created_date) : null);
         return ticketDate ? ticketDate >= start : true;
       });
     }
 
     if (endDate) {
-      // Forzamos el último segundo del día para incluir las ventas de hoy
       const end = new Date(`${endDate}T23:59:59`);
-      orders = orders.filter((o) => {
-        if (!o.created_date) return false;
-        return new Date(o.created_date) <= end;
-      });
-
+      orders = orders.filter((o) => o.created_date && new Date(o.created_date) <= end);
       tickets = tickets.filter((t) => {
         const parentOrder = orders.find(o => o.id === t.order_id);
-        const ticketDate = parentOrder ? new Date(parentOrder.created_date) : null;
+        const ticketDate = parentOrder ? new Date(parentOrder.created_date) : (t.created_date ? new Date(t.created_date) : null);
         return ticketDate ? ticketDate <= end : true;
       });
     }
@@ -228,9 +209,7 @@ export default function DashboardVentas() {
     if (!user) return;
     try {
       const timestamp = new Date().getTime();
-      const organizerResponse = await fetch(`/api/organizers?userId=${user.id}&t=${timestamp}`, {
-        cache: 'no-store'
-      });
+      const organizerResponse = await fetch(`/api/organizers?userId=${user.id}&t=${timestamp}`, { cache: 'no-store' });
       const organizersData = await organizerResponse.json();
       if (organizersData.length > 0) {
         setOrganizer(organizersData[0]);
@@ -342,7 +321,6 @@ export default function DashboardVentas() {
           {organizer && (
             <MpConnectBanner
               organizerId={organizer.id}
-              /* 👈 3. Evaluación de fallback entre ambas convenciones de nombrado */
               mercadopagoUserId={organizer.mercadopagoUserId || organizer.mercadopago_user_id}
               onRefreshOrganizer={refreshOrganizerData}
             />
@@ -362,7 +340,6 @@ export default function DashboardVentas() {
             tickets={filteredData.tickets}
           />
 
-          {/* 📊 FILA 1: Gráfico ocupando todo el ancho */}
           <div className="w-full">
             <SalesChart
               orders={filteredData.orders}
@@ -371,7 +348,6 @@ export default function DashboardVentas() {
             />
           </div>
 
-          {/* 📋 FILA 2: Tabla de eventos ocupando todo el ancho debajo del gráfico */}
           <div className="w-full">
             <EventsTable
               events={events}

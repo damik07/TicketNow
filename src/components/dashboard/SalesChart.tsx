@@ -1,4 +1,3 @@
-// src/components/dashboard/SalesChart.tsx
 import React, { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { format, startOfDay, differenceInDays, addDays, subDays } from "date-fns";
@@ -39,15 +38,13 @@ export default function SalesChart({ orders, startDate, endDate }: SalesChartPro
       const day = addDays(minDate, i);
       const dayStr = format(day, "yyyy-MM-dd");
 
-      // 🚀 Buscamos SOLAMENTE órdenes aprobadas para este día en la zona horaria local
       const dayOrders = orders.filter((o: Order) => {
         if (!o.created_date) return false;
 
-        // Validamos estado de pago aprobado
-        const isApproved = o.payment_status === "aprobado" || o.payment_status === "approved";
+        const status = String(o.payment_status || '').toLowerCase();
+        const isApproved = status === 'aprobado' || status === 'approved' || status === 'paid' || status === 'completado';
         if (!isApproved) return false;
 
-        // Formateamos la fecha en hora local antes de comparar
         const orderDate = new Date(o.created_date);
         if (isNaN(orderDate.getTime())) return false;
 

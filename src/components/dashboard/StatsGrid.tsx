@@ -1,4 +1,3 @@
-// src/components/dashboard/StatsGrid.tsx
 import React from "react";
 import { DollarSign, Ticket, CalendarCheck, TrendingUp } from "lucide-react";
 
@@ -24,10 +23,13 @@ interface StatsGridProps {
 }
 
 export default function StatsGrid({ events, orders, tickets }: StatsGridProps) {
-  // Sumamos las órdenes aprobadas casteando a Number por seguridad
-  const totalRevenue = orders
-    .filter((o: Order) => o.payment_status === "aprobado" || o.payment_status === "approved")
-    .reduce((sum: number, o: Order) => sum + (Number(o.total_amount) || 0), 0);
+  // Coincidencia flexible de estado aprobado (aprobado, approved, paid, etc.)
+  const approvedOrders = orders.filter((o: Order) => {
+    const status = String(o.payment_status || '').toLowerCase();
+    return status === 'aprobado' || status === 'approved' || status === 'paid' || status === 'completado';
+  });
+
+  const totalRevenue = approvedOrders.reduce((sum: number, o: Order) => sum + (Number(o.total_amount) || 0), 0);
 
   const totalTicketsSold = tickets.length;
   const publishedEvents = events.filter((e: Event) => e.status === "publicado").length;
