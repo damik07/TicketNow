@@ -5,6 +5,8 @@ import { completeQueueSessionByUserId } from "../queue";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function processSuccessOrder(orderId: string) {
+  console.log(`[processSuccessOrder] Iniciando procesamiento para la orden ID: ${orderId}`);
+
   // Ejecutamos la creación de tickets dentro de una transacción
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -13,6 +15,7 @@ export async function processSuccessOrder(orderId: string) {
     });
 
     if (!order) {
+      console.error(`[processSuccessOrder Error] Orden no encontrada: ${orderId}`);
       throw new Error(`Orden no encontrada: ${orderId}`);
     }
 
@@ -22,7 +25,7 @@ export async function processSuccessOrder(orderId: string) {
     });
 
     if (existingTicketsCount > 0) {
-      console.log(`[processSuccessOrder] La orden ${orderId} ya posee ${existingTicketsCount} tickets generados.`);
+      console.log(`[processSuccessOrder] La orden ${orderId} ya posee ${existingTicketsCount} tickets generados previamente.`);
       return { alreadyProcessed: true, order, createdTickets: [] };
     }
 
@@ -32,6 +35,7 @@ export async function processSuccessOrder(orderId: string) {
     });
 
     if (!event) {
+      console.error(`[processSuccessOrder Error] Evento no encontrado para la orden: ${order.eventId}`);
       throw new Error(`Evento no encontrado para la orden: ${order.eventId}`);
     }
 
@@ -41,6 +45,7 @@ export async function processSuccessOrder(orderId: string) {
         where: { id: orderId },
         data: { paymentStatus: "aprobado" },
       });
+      console.log(`[processSuccessOrder] Orden ${orderId} actualizada a estado 'aprobado'.`);
     }
 
     // Liberamos cupo de la fila virtual
@@ -102,63 +107,63 @@ export async function processSuccessOrder(orderId: string) {
       }
     }
 
+    console.log(`[processSuccessOrder] Se crearon exitosamente ${createdTickets.length} tickets para la orden ${orderId}.`);
     return { alreadyProcessed: false, order, createdTickets };
   });
 
   // ✉️ ENVÍO DE MAIL CON RESEND
-if (result && !result.alreadyProcessed && result.createdTickets.length > 0) {
-  try {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.error("[Email Error] RESEND_API_KEY no está configurada en las variables de entorno.");
-      return result;
-    }
+  if (result && !result.alreadyProcessed && result.createdTickets.length > 0) {
+    try {
+      const apiKey = process.env.RESEND_API_KEY;
+      if (!apiKey) {
+        console.error("[Email Error] RESEND_API_KEY no está configurada en las variables de entorno.");
+        return result;
+      }
 
-    const resend = new Resend(apiKey);
+      const resend = new Resend(apiKey);
+      console.log(`[Email] Preparando envío de correo a: ${result.order.userEmail}`);
 
-    const ticketsHtml = result.createdTickets
-      .map((ticket) => {
-        const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(ticket.qrCode)}`;
+      const ticketsHtml = result.createdTickets
+        .map((ticket) => {
+          const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(ticket.qrCode)}`;
 
-        return `
-        <div style="border: 1px solid #1e293b; background-color: #0f172a; border-radius: 12px; padding: 20px; margin-bottom: 15px; text-align: center; font-family: sans-serif; color: #ffffff;">
-          <h3 style="margin: 0 0 5px 0; color: #a78bfa;">${ticket.eventTitle}</h3>
-          <p style="margin: 0 0 15px 0; font-size: 14px; color: #94a3b8;">${ticket.ticketTypeName}</p>
-          <div style="background-color: #ffffff; padding: 10px; display: inline-block; border-radius: 8px;">
-            <img src="${qrImageUrl}" alt="Código QR de acceso" width="180" height="180" style="display: block;" />
+          return `
+          <div style="border: 1px solid #1e293b; background-color: #0f172a; border-radius: 12px; padding: 20px; margin-bottom: 15px; text-align: center; font-family: sans-serif; color: #ffffff;">
+            <h3 style="margin: 0 0 5px 0; color: #a78bfa;">${ticket.eventTitle}</h3>
+            <p style="margin: 0 0 15px 0; font-size: 14px; color: #94a3b8;">${ticket.ticketTypeName}</p>
+            <div style="background-color: #ffffff; padding: 10px; display: inline-block; border-radius: 8px;">
+              <img src="${qrImageUrl}" alt="Código QR de acceso" width="180" height="180" style="display: block;" />
+            </div>
+            <p style="margin: 15px 0 0 0; font-size: 12px; color: #64748b;">Código: <strong>${ticket.id}</strong></p>
           </div>
-          <p style="margin: 15px 0 0 0; font-size: 12px; color: #64748b;">Código: <strong>${ticket.id}</strong></p>
-        </div>
-      `;
-      })
-      .join("");
+        `;
+        })
+        .join("");
 
-    // 💡 IMPORTANTE: Si estás testeando sin dominio verificado en Resend, 
-    // usá 'onboarding@resend.dev' como 'from'.
-    const fromAddress = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+      const fromAddress = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 
-    const emailResponse = await resend.emails.send({
-      from: `TicketNow <${fromAddress}>`,
-      to: result.order.userEmail,
-      subject: `¡Tus entradas para ${result.order.eventTitle}! 🎟️`,
-      html: `
-        <div style="max-width: 600px; margin: 0 auto; font-family: sans-serif; background-color: #020617; padding: 30px;">
-          <h1 style="color: #ffffff; text-align: center; font-size: 24px; margin-bottom: 10px;">¡Gracias por tu compra, ${result.order.userName}!</h1>
-          <p style="color: #94a3b8; text-align: center; margin-bottom: 30px;">Tu pago fue procesado con éxito. A continuación tenés tus accesos confirmados:</p>
-          
-          ${ticketsHtml}
-          
-          <hr style="border: 0; border-top: 1px solid #1e293b; margin: 30px 0;" />
-          <p style="color: #64748b; font-size: 11px; text-align: center;">Este es un correo automático enviado por TicketNow. No lo respondas.</p>
-        </div>
-      `,
-    });
+      const emailResponse = await resend.emails.send({
+        from: `TicketNow <${fromAddress}>`,
+        to: result.order.userEmail,
+        subject: `¡Tus entradas para ${result.order.eventTitle}! 🎟️`,
+        html: `
+          <div style="max-width: 600px; margin: 0 auto; font-family: sans-serif; background-color: #020617; padding: 30px;">
+            <h1 style="color: #ffffff; text-align: center; font-size: 24px; margin-bottom: 10px;">¡Gracias por tu compra, ${result.order.userName}!</h1>
+            <p style="color: #94a3b8; text-align: center; margin-bottom: 30px;">Tu pago fue procesado con éxito. A continuación tenés tus accesos confirmados:</p>
+            
+            ${ticketsHtml}
+            
+            <hr style="border: 0; border-top: 1px solid #1e293b; margin: 30px 0;" />
+            <p style="color: #64748b; font-size: 11px; text-align: center;">Este es un correo automático enviado por TicketNow. No lo respondas.</p>
+          </div>
+        `,
+      });
 
-    console.log(`[Email] Respuesta de Resend:`, emailResponse);
-  } catch (mailError) {
-    console.error("[Email Error] No se pudo despachar el correo:", mailError);
+      console.log(`[Email] Correo despachado con éxito. Respuesta de Resend:`, emailResponse);
+    } catch (mailError) {
+      console.error("[Email Error] No se pudo despachar el correo:", mailError);
+    }
   }
-}
 
   return result;
 }

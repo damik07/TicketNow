@@ -1,11 +1,10 @@
 // app/api/webhooks/mercadopago/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
-import { Payment } from 'mercadopago'
+import { Payment, MercadoPagoConfig } from 'mercadopago'
 import { processSuccessOrder } from '@/lib/orders/processOrder'
 import { prisma } from '@/lib/db'
-import { mpClient, getValidOrganizerAccessToken } from '@/lib/mercadopago'
-import { MercadoPagoConfig } from 'mercadopago'
+import { mpClient } from '@/lib/mercadopago'
 
 export const dynamic = 'force-dynamic';
 
@@ -13,54 +12,71 @@ export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
 
-    // 1. Parsear id y type
+    // 1. Detección flexible de tipo y ID (soporta query params y body de Mercado Pago)
     let type = searchParams.get('type') || searchParams.get('topic')
     let dataId = searchParams.get('data.id') || searchParams.get('id')
 
-    if (!dataId) {
-      try {
-        const body = await request.json()
-        type = type || body.type || (body.action?.includes('payment') ? 'payment' : null)
-        dataId = body.data?.id || body.id
-      } catch {
-        // Ignorar error si viene sin body
-      }
+    let body: any = null;
+    try {
+      body = await request.json()
+      type = type || body?.type || body?.topic || (body?.action?.includes('payment') ? 'payment' : null)
+      dataId = dataId || body?.data?.id || body?.id
+    } catch {
+      // Si el request viene sin body o no es JSON válido, ignoramos el parseo
     }
 
-    if ((type !== 'payment' && type !== 'payment.created' && type !== 'payment.updated') || !dataId) {
+    console.log(`[MP Webhook Received] Type: ${type}, DataID: ${dataId}`, body ? JSON.stringify(body) : 'Sin body');
+
+    // 🛡️ Aceptamos cualquier evento que sea de pago de forma amplia
+    const isPaymentEvent = 
+      type === 'payment' || 
+      type === 'payment.created' || 
+      type === 'payment.updated' ||
+      body?.action === 'payment.created' ||
+      body?.action === 'payment.updated';
+
+    if (!isPaymentEvent || !dataId) {
       return NextResponse.json({ received: true }, { status: 200 })
     }
 
-    // 2. Intentar obtener el pago con el cliente global de la plataforma
-    let paymentClient = new Payment(mpClient)
-    let paymentData;
+    // 2. Obtención segura de los datos del pago
+    let paymentData: any = null;
 
     try {
-      paymentData = await paymentClient.get({ id: dataId });
+      const paymentClient = new Payment(mpClient);
+      paymentData = await paymentClient.get({ id: String(dataId) });
     } catch (err) {
-      console.warn(`[MP Webhook] No se pudo obtener el pago ${dataId} con el token global. Intentando via Fetch API directo...`);
+      console.warn(`[MP Webhook] Falló cliente principal para pago ${dataId}. Intentando vía Fetch API...`);
       
-      // Fallback: Consulta directa enviando Bearer Token
       const res = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
         headers: {
           'Authorization': `Bearer ${process.env.MERCADO_PAGO_ACCESS_TOKEN}`
         }
       });
+
       if (res.ok) {
         paymentData = await res.json();
       } else {
-        console.error(`[MP Webhook Error]: Imposible recuperar pago ${dataId}`, await res.text());
+        console.error(`[MP Webhook Error]: Imposible recuperar pago ${dataId} con token global`, await res.text());
         return NextResponse.json({ received: true, warning: 'Payment fetch failed' }, { status: 200 });
       }
     }
 
+    if (!paymentData) {
+      console.error(`[MP Webhook Error]: No se pudieron obtener datos para el pago ${dataId}`);
+      return NextResponse.json({ received: true, warning: 'No payment data' }, { status: 200 });
+    }
+
     const metadata = paymentData.metadata;
+    const paymentStatus = paymentData.status;
+
+    console.log(`[MP Webhook] Pago ${dataId} recuperado con éxito. Estado: ${paymentStatus}`);
 
     // =========================================================================
     // 🍹 1. DETECCIÓN: Pagos de Consumiciones
     // =========================================================================
     if (metadata && metadata.es_diferencia_consumo) {
-      if (paymentData.status === 'approved') {
+      if (paymentStatus === 'approved') {
         const ticketId = metadata.ticket_id
         const montoPagadoMP = paymentData.transaction_amount || 0
 
@@ -114,44 +130,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, warning: 'Missing external reference' }, { status: 200 })
     }
 
-    if (paymentData.status === 'approved') {
+    if (paymentStatus === 'approved') {
       const existingOrder = await prisma.order.findUnique({
         where: { id: orderId }
       });
 
-      if (existingOrder && existingOrder.paymentStatus !== 'aprobado') {
-        const updated = await prisma.order.updateMany({
-          where: {
-            id: orderId,
-            paymentStatus: { not: 'aprobado' }
-          },
-          data: { paymentStatus: 'aprobado' }
-        });
-
-        if (updated.count > 0) {
-          // 🚀 Ejecuta la generación de tickets y envío de emails
-          try {
-            await processSuccessOrder(orderId);
-            console.log(`[MP Webhook] Orden ${orderId} procesada y tickets creados exitosamente.`);
-          } catch (procError) {
-            console.error(`[MP Webhook Error] Falló processSuccessOrder para ${orderId}:`, procError);
-          }
-        } else {
-          console.log(`[MP Webhook] Orden ${orderId} ya estaba siendo procesada.`);
+      if (existingOrder) {
+        if (existingOrder.paymentStatus !== 'aprobado') {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { paymentStatus: 'aprobado' }
+          });
         }
+
+        // 🚀 Ejecuta la generación de tickets y envío de emails de forma garantizada
+        try {
+          console.log(`[MP Webhook] Disparando processSuccessOrder para la orden ${orderId}...`);
+          await processSuccessOrder(orderId);
+          console.log(`[MP Webhook] Orden ${orderId} procesada y tickets creados exitosamente.`);
+        } catch (procError) {
+          console.error(`[MP Webhook Error] Falló processSuccessOrder para ${orderId}:`, procError);
+        }
+      } else {
+        console.warn(`[MP Webhook] Orden con ID ${orderId} no encontrada en la base de datos local.`);
       }
     } else {
       console.warn('[MP Webhook] Pago no aprobado:', {
         paymentId: dataId,
         orderId,
-        status: paymentData.status,
+        status: paymentStatus,
       })
     }
 
     return NextResponse.json({ success: true }, { status: 200 })
 
   } catch (error: any) {
-    console.error('[MP Webhook Error]:', error.message || error)
+    console.error('[MP Webhook Error critical]:', error.message || error)
     return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 })
   }
 }
