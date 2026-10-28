@@ -9,6 +9,7 @@ import { Calendar, MapPin, ArrowLeft, Loader2, AlertTriangle, Navigation } from 
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { motion } from "framer-motion";
+import { displayLocalDate } from "@/utils/date";
 
 interface Event {
   id: string;
@@ -220,7 +221,8 @@ function EventDetailContent() {
     );
   }
 
-  const eventDate = event.date_time ? new Date(event.date_time) : null;
+  const eventDate = event.date_time ? displayLocalDate(event.date_time) : null;
+  
   const isValidDate = eventDate && !isNaN(eventDate.getTime());
 
   // URL del Iframe de Google Maps

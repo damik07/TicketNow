@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
     console.log(`[MP Webhook Received] Type: ${type}, DataID: ${dataId}`, body ? JSON.stringify(body) : 'Sin body');
 
     // 🛡️ Aceptamos cualquier evento que sea de pago de forma amplia
-    const isPaymentEvent = 
-      type === 'payment' || 
-      type === 'payment.created' || 
+    const isPaymentEvent =
+      type === 'payment' ||
+      type === 'payment.created' ||
       type === 'payment.updated' ||
       body?.action === 'payment.created' ||
       body?.action === 'payment.updated';
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       paymentData = await paymentClient.get({ id: String(dataId) });
     } catch (err) {
       console.warn(`[MP Webhook] Falló cliente principal para pago ${dataId}. Intentando vía Fetch API...`);
-      
+
       const res = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
         headers: {
           'Authorization': `Bearer ${process.env.MERCADO_PAGO_ACCESS_TOKEN}`
@@ -131,19 +131,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (paymentStatus === 'approved') {
-      const existingOrder = await prisma.order.findUnique({
-        where: { id: orderId }
+      // 🚀 ATÓMICO: Solo la primera llamada que logre cambiar el estado de !aprobado a 'aprobado' ejecutará processSuccessOrder
+      const updateResult = await prisma.order.updateMany({
+        where: {
+          id: orderId,
+          paymentStatus: { not: 'aprobado' }
+        },
+        data: {
+          paymentStatus: 'aprobado'
+        }
       });
 
-      if (existingOrder) {
-        if (existingOrder.paymentStatus !== 'aprobado') {
-          await prisma.order.update({
-            where: { id: orderId },
-            data: { paymentStatus: 'aprobado' }
-          });
-        }
-
-        // 🚀 Ejecuta la generación de tickets y envío de emails de forma garantizada
+      if (updateResult.count > 0) {
         try {
           console.log(`[MP Webhook] Disparando processSuccessOrder para la orden ${orderId}...`);
           await processSuccessOrder(orderId);
@@ -152,7 +151,7 @@ export async function POST(request: NextRequest) {
           console.error(`[MP Webhook Error] Falló processSuccessOrder para ${orderId}:`, procError);
         }
       } else {
-        console.warn(`[MP Webhook] Orden con ID ${orderId} no encontrada en la base de datos local.`);
+        console.log(`[MP Webhook] Orden ${orderId} ya fue procesada por una solicitud concurrente. Se omite duplicado.`);
       }
     } else {
       console.warn('[MP Webhook] Pago no aprobado:', {
